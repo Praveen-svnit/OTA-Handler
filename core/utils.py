@@ -47,4 +47,4 @@ def auto_detect(columns, *hint_groups):
         for col, col_l in cols_lower:
             if all(h in col_l for h in hints_l):
                 return col
-    return columns[0] if columns else ''
+    return None
