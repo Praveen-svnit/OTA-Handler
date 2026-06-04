@@ -41,19 +41,52 @@ with st.sidebar:
     else:
         st.info("Run checks to see results.")
 
+def read_uploaded_file(uploaded_file):
+    """Read .xlsx/.xls including HTML-disguised .xls exports from hotel/OTA systems."""
+    data = uploaded_file.read()
+
+    # Strategy 1: standard Excel (xlsx or real xls)
+    try:
+        xl = pd.ExcelFile(io.BytesIO(data))
+        sheets = xl.sheet_names
+        dfs = [pd.read_excel(xl, sheet_name=s, dtype=str).fillna('') for s in sheets]
+        return pd.concat(dfs, ignore_index=True), sheets
+    except Exception:
+        pass
+
+    # Strategy 2: HTML table exported as .xls (common in hotel/OTA systems)
+    try:
+        tables = pd.read_html(io.BytesIO(data))
+        if tables:
+            df = pd.concat(tables, ignore_index=True).astype(str).fillna('')
+            return df, ['Sheet1']
+    except Exception:
+        pass
+
+    # Strategy 3: CSV exported as .xls
+    try:
+        df = pd.read_csv(io.BytesIO(data), dtype=str).fillna('')
+        return df, ['Sheet1']
+    except Exception:
+        pass
+
+    raise Exception("Could not read file. Try opening it in Excel and saving as .xlsx, then re-upload.")
+
+
 # ── Step 1: Upload SU file ────────────────────────────────────────────────────
 st.subheader("1 · Upload SU Export")
 uploaded = st.file_uploader("SU Excel file (all sheets will be combined)", type=["xlsx", "xls"])
 
 if uploaded:
-    with st.spinner("Reading file…"):
-        xl = pd.ExcelFile(uploaded)
-        sheets = xl.sheet_names
-        dfs = [pd.read_excel(xl, sheet_name=s, dtype=str).fillna('') for s in sheets]
-        su_df = pd.concat(dfs, ignore_index=True)
-    st.success(f"✅ {len(su_df):,} rows loaded from {len(sheets)} sheet(s): {', '.join(sheets)}")
-    st.session_state.su_df = su_df
-    su_cols = list(su_df.columns)
+    try:
+        with st.spinner("Reading file…"):
+            su_df, sheets = read_uploaded_file(uploaded)
+        st.success(f"✅ {len(su_df):,} rows loaded from {len(sheets)} sheet(s): {', '.join(sheets)}")
+        st.session_state.su_df = su_df
+        su_cols = list(su_df.columns)
+    except Exception as e:
+        st.error(str(e))
+        su_cols = []
 else:
     su_cols = []
 
