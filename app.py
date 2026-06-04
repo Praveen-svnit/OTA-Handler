@@ -249,6 +249,37 @@ else:
     }
     st.session_state.col_cfg = col_cfg
 
+    # ── Parse preview ─────────────────────────────────────────────────────────
+    with st.expander("Verify parsed IDs (check column mapping is correct)", expanded=False):
+        from core.utils import norm_id, parse_pms_rate, parse_pms_room
+        _su_prev = st.session_state.get("su_df")
+        if _su_prev is not None:
+            _sample = _su_prev.head(10)
+            rows_preview = []
+            for _, r in _sample.iterrows():
+                rm = parse_pms_room(r.get(su_room_id, ''))
+                rt = parse_pms_rate(r.get(su_rate_id, ''))
+                ch_raw = r.get(su_channel, '') if su_channel else ''
+                rows_preview.append({
+                    'PMS Room ID (raw)':     rm['raw'],
+                    'Room → PropID':         rm['propId'],
+                    'Room → RoomType':       rm['roomType'],
+                    'PMS Rate ID (raw)':     rt['raw'],
+                    'Rate → PropID':         rt['propId'],
+                    'Rate → RoomType':       rt['roomType'],
+                    'Rate → RateCode':       rt['rateCode'],
+                    'Channel (raw)':         str(ch_raw),
+                    'Channel (normalized)':  norm_id(str(ch_raw)),
+                    'RoomType match?':       '✅' if rm['roomType'] == rt['roomType'] else '❌ MISMATCH',
+                })
+            st.caption("First 10 SU rows — verify PropID and RoomType are parsed correctly")
+            st.dataframe(pd.DataFrame(rows_preview), use_container_width=True)
+
+            # Also show a sample of CRS property IDs for comparison
+            st.caption("Sample CRS Property IDs (from selected column)")
+            _crs_sample = crs_df[int_prop_id].apply(norm_id).drop_duplicates().head(10).reset_index(drop=True)
+            st.write(_crs_sample.tolist())
+
     # ── Step 4: Run ───────────────────────────────────────────────────────────
     st.markdown('<div class="step-label">Step 4 — Run Checks</div>', unsafe_allow_html=True)
     if st.button("🚀 Run All Checks", type="primary", use_container_width=True):
