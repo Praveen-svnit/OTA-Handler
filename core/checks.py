@@ -146,7 +146,12 @@ def run_checks(su_df, crs_df, dash_raw, col_cfg):
             })
 
         # Check 2: OBP multiplier values must all be 1
-        bad_vals = [(k, v) for k, v in obp.items() if float(v) != 1.0]
+        def _is_not_one(v):
+            try:
+                return float(v) != 1.0
+            except (ValueError, TypeError):
+                return True  # non-numeric counts as bad
+        bad_vals = [(k, v) for k, v in obp.items() if _is_not_one(v)]
         if bad_vals:
             res['obpv'].append({
                 'Property ID': rt['propId'], 'Property Name': pname,
@@ -162,7 +167,7 @@ def run_checks(su_df, crs_df, dash_raw, col_cfg):
         occ_key = f"{rt['propId']}|{rt['roomType']}"
         if cfg_int.get('max_occ') and occ_key in int_occ_map:
             max_occ  = int_occ_map[occ_key]
-            obp_occs = sorted(int(k) for k in obp)
+            obp_occs = sorted(int(k) for k in obp if str(k).strip().lstrip('-').isdigit())
             extra    = [o for o in obp_occs if o > max_occ]
             missing  = [o for o in range(1, max_occ + 1) if o not in obp_occs]
             base = {
