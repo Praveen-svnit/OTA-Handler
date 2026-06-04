@@ -236,7 +236,8 @@ else:
             int_rate_code = st.selectbox("Rate Plan Code", crs_cols,
                 index=_det(crs_cols, ['rate plan'], ['rate code'], ['rate']))
             int_max_occ = st.selectbox("Max Occupancy (optional)", [None] + crs_cols,
-                index=_det_opt(crs_cols, ['max occ'], ['max_occ'], ['occupancy']))
+                index=_det_opt(crs_cols, ['max occ'], ['max_occ'], ['max occupancy'],
+                               ['maximum occupancy'], ['maxocc'], ['pax'], ['max pax']))
         with ic3:
             int_is_active = st.selectbox("Active filter (optional)", [None] + crs_cols,
                 index=_det_opt(crs_cols, ['is_active'], ['is active']))
