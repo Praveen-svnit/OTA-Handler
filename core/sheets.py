@@ -1,4 +1,5 @@
 import gspread
+import gspread.exceptions
 import pandas as pd
 import streamlit as st
 
@@ -15,7 +16,12 @@ def _get_gc():
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_crs_data() -> pd.DataFrame:
     gc = _get_gc()
-    ws = gc.open_by_key(CRS_SHEET_ID).worksheet(CRS_SHEET_TAB)
+    spreadsheet = gc.open_by_key(CRS_SHEET_ID)
+    try:
+        ws = spreadsheet.worksheet(CRS_SHEET_TAB)
+    except gspread.exceptions.WorksheetNotFound:
+        available = [w.title for w in spreadsheet.worksheets()]
+        raise Exception(f"Tab '{CRS_SHEET_TAB}' not found. Available tabs: {available}")
     return pd.DataFrame(ws.get_all_records())
 
 
