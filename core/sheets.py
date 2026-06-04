@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 CRS_SHEET_ID  = '1H2lP2zn4Ydeyex504DzmfBwXAX0Ip2H4SIu92DylRLw'
-CRS_SHEET_TAB = 'CRS Data'
+CRS_SHEET_TAB = 'CRS DATA'
 DASH_SHEET_ID  = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU'
 DASH_SHEET_TAB = 'Prop Level Dashboard'
 
