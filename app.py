@@ -45,7 +45,7 @@ def read_uploaded_file(uploaded_file):
     """Read .xlsx/.xls including HTML-disguised .xls exports from hotel/OTA systems."""
     data = uploaded_file.read()
 
-    # Strategy 1: standard Excel (xlsx or real xls)
+    # Strategy 1: standard Excel via pandas (xlsx or real xls)
     try:
         xl = pd.ExcelFile(io.BytesIO(data))
         sheets = xl.sheet_names
@@ -54,21 +54,59 @@ def read_uploaded_file(uploaded_file):
     except Exception:
         pass
 
-    # Strategy 2: HTML table exported as .xls (common in hotel/OTA systems)
+    # Strategy 2: xlrd with corruption tolerance (handles slightly corrupt .xls)
     try:
-        tables = pd.read_html(io.BytesIO(data))
-        if tables:
-            df = pd.concat(tables, ignore_index=True).astype(str).fillna('')
-            return df, ['Sheet1']
+        import xlrd
+        book = xlrd.open_workbook(file_contents=data, ignore_workbook_corruption=True)
+        sheets = book.sheet_names()
+        dfs = []
+        for sname in sheets:
+            ws = book.sheet_by_name(sname)
+            rows = [ws.row_values(i) for i in range(ws.nrows)]
+            if rows:
+                headers = [str(h) for h in rows[0]]
+                body    = [[str(c) for c in r] for r in rows[1:]]
+                dfs.append(pd.DataFrame(body, columns=headers))
+        if dfs:
+            return pd.concat(dfs, ignore_index=True), sheets
     except Exception:
         pass
 
-    # Strategy 3: CSV exported as .xls
+    # Strategy 3: openpyxl (handles .xlsx disguised as .xls)
     try:
-        df = pd.read_csv(io.BytesIO(data), dtype=str).fillna('')
-        return df, ['Sheet1']
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        sheets = wb.sheetnames
+        dfs = []
+        for sname in sheets:
+            ws = wb[sname]
+            rows = list(ws.values)
+            if rows:
+                headers = [str(h) if h is not None else '' for h in rows[0]]
+                body    = [[str(c) if c is not None else '' for c in r] for r in rows[1:]]
+                dfs.append(pd.DataFrame(body, columns=headers))
+        if dfs:
+            return pd.concat(dfs, ignore_index=True), sheets
     except Exception:
         pass
+
+    # Strategy 4: HTML table exported as .xls
+    for parser in ('lxml', 'html5lib', 'html.parser'):
+        try:
+            tables = pd.read_html(io.BytesIO(data), flavor=parser)
+            if tables:
+                df = pd.concat(tables, ignore_index=True).astype(str).fillna('')
+                return df, ['Sheet1']
+        except Exception:
+            continue
+
+    # Strategy 5: CSV exported as .xls
+    for enc in ('utf-8', 'latin-1', 'cp1252'):
+        try:
+            df = pd.read_csv(io.BytesIO(data), dtype=str, encoding=enc).fillna('')
+            return df, ['Sheet1']
+        except Exception:
+            continue
 
     raise Exception("Could not read file. Try opening it in Excel and saving as .xlsx, then re-upload.")
 
