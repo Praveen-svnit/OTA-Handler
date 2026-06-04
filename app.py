@@ -64,32 +64,41 @@ col1, col2 = st.columns(2)
 with col1:
     if st.button("🔄 Fetch CRS Data", use_container_width=True):
         fetch_crs_data.clear()
-    try:
-        with st.spinner("Fetching CRS data…"):
-            crs_df = fetch_crs_data()
-        st.session_state.crs_df = crs_df
-        st.success(f"✅ CRS: {len(crs_df):,} rows, {len(crs_df.columns)} columns")
-    except Exception as e:
-        st.error(f"CRS fetch failed: {e}")
-        crs_df = None
+        try:
+            with st.spinner("Fetching CRS data…"):
+                crs_df = fetch_crs_data()
+            st.session_state.crs_df = crs_df
+            st.session_state.pop("crs_error", None)
+        except Exception as e:
+            st.session_state.crs_error = str(e)
+
+    if "crs_df" in st.session_state:
+        df = st.session_state.crs_df
+        st.success(f"✅ CRS loaded: {len(df):,} rows, {len(df.columns)} columns")
+    elif "crs_error" in st.session_state:
+        st.error(f"CRS fetch failed: {st.session_state.crs_error}")
+    else:
+        st.info("Click to fetch CRS data from Google Sheets")
 
 with col2:
     if st.button("🔄 Fetch Dashboard", use_container_width=True):
         fetch_dashboard_raw.clear()
-    try:
-        with st.spinner("Fetching dashboard…"):
-            dash_raw = fetch_dashboard_raw()
-        st.session_state.dash_raw = dash_raw
-        st.success(f"✅ Dashboard: {len(dash_raw) - 1:,} properties loaded")
-    except Exception as e:
-        st.warning(f"Dashboard fetch failed (OTA live checks will be skipped): {e}")
-        dash_raw = None
+        try:
+            with st.spinner("Fetching dashboard…"):
+                dash_raw = fetch_dashboard_raw()
+            st.session_state.dash_raw = dash_raw
+            st.session_state.pop("dash_error", None)
+        except Exception as e:
+            st.session_state.dash_error = str(e)
 
-# Restore from session if already fetched
-if crs_df is None and "crs_df" in st.session_state:
-    crs_df = st.session_state.crs_df
-if "dash_raw" not in st.session_state:
-    st.session_state.dash_raw = None
+    if "dash_raw" in st.session_state and st.session_state.dash_raw:
+        st.success(f"✅ Dashboard loaded: {len(st.session_state.dash_raw) - 1:,} properties")
+    elif "dash_error" in st.session_state:
+        st.warning(f"Dashboard fetch failed (OTA checks skipped): {st.session_state.dash_error}")
+    else:
+        st.info("Click to fetch Prop Level Dashboard (optional)")
+
+crs_df  = st.session_state.get("crs_df")
 dash_raw = st.session_state.get("dash_raw")
 
 # ── Step 3: Column Configuration ─────────────────────────────────────────────
