@@ -9,26 +9,24 @@ DASH_SHEET_ID  = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU'
 DASH_SHEET_TAB = 'Prop Level Dashboard'
 
 
-def _get_gc():
+def _gc():
     return gspread.service_account_from_dict(st.secrets["gcp_service_account"])
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_crs_data() -> pd.DataFrame:
-    gc = _get_gc()
-    spreadsheet = gc.open_by_key(CRS_SHEET_ID)
+def fetch_crs() -> pd.DataFrame:
+    gc = _gc()
+    wb = gc.open_by_key(CRS_SHEET_ID)
     try:
-        ws = spreadsheet.worksheet(CRS_SHEET_TAB)
+        ws = wb.worksheet(CRS_SHEET_TAB)
     except gspread.exceptions.WorksheetNotFound:
-        available = [w.title for w in spreadsheet.worksheets()]
-        raise Exception(f"Tab '{CRS_SHEET_TAB}' not found. Available tabs: {available}")
+        tabs = [w.title for w in wb.worksheets()]
+        raise Exception(f"Tab '{CRS_SHEET_TAB}' not found. Available tabs: {tabs}")
     rows = ws.get_all_values()
     if not rows:
         return pd.DataFrame()
-    headers = [str(h) for h in rows[0]]
-    # Deduplicate headers (get_all_records() breaks on duplicates)
-    seen = {}
-    deduped = []
+    headers = rows[0]
+    seen, deduped = {}, []
     for h in headers:
         if h in seen:
             seen[h] += 1
@@ -40,8 +38,7 @@ def fetch_crs_data() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_dashboard_raw() -> list:
-    """Returns list-of-lists (row 0 = headers) for column-index access."""
-    gc = _get_gc()
+def fetch_dashboard() -> list:
+    gc = _gc()
     ws = gc.open_by_key(DASH_SHEET_ID).worksheet(DASH_SHEET_TAB)
     return ws.get_all_values()
