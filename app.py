@@ -95,7 +95,7 @@ def read_uploaded_file(uploaded_file):
         try:
             tables = pd.read_html(io.BytesIO(data), flavor=parser)
             if tables:
-                df = pd.concat(tables, ignore_index=True).astype(str).fillna('')
+                df = pd.concat(tables, ignore_index=True).fillna('').astype(str)
                 return df, ['Sheet1']
         except Exception:
             continue

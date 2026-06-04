@@ -14,7 +14,7 @@ def parse_pms_rate(val):
         'propId':   norm_id(p[0]) if len(p) > 0 else '',
         'roomType': norm_id(p[1]) if len(p) > 1 else '',
         'rateCode': norm_id(p[2]) if len(p) > 2 else '',
-        'suffix':   p[3]          if len(p) > 3 else '',
+        'suffix':   '-'.join(p[3:]) if len(p) > 3 else '',
         'raw':      val,
     }
 

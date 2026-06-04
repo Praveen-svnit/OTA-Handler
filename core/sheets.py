@@ -22,7 +22,21 @@ def fetch_crs_data() -> pd.DataFrame:
     except gspread.exceptions.WorksheetNotFound:
         available = [w.title for w in spreadsheet.worksheets()]
         raise Exception(f"Tab '{CRS_SHEET_TAB}' not found. Available tabs: {available}")
-    return pd.DataFrame(ws.get_all_records())
+    rows = ws.get_all_values()
+    if not rows:
+        return pd.DataFrame()
+    headers = [str(h) for h in rows[0]]
+    # Deduplicate headers (get_all_records() breaks on duplicates)
+    seen = {}
+    deduped = []
+    for h in headers:
+        if h in seen:
+            seen[h] += 1
+            deduped.append(f"{h}.{seen[h]}")
+        else:
+            seen[h] = 0
+            deduped.append(h)
+    return pd.DataFrame(rows[1:], columns=deduped).fillna('')
 
 
 @st.cache_data(ttl=300, show_spinner=False)

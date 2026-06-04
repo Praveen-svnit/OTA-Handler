@@ -1,5 +1,12 @@
 from .utils import norm_id, parse_pms_rate, parse_pms_room, parse_obp
 
+
+def _is_not_one(v):
+    try:
+        return float(v) != 1.0
+    except (ValueError, TypeError):
+        return True
+
 CH_MAP = [
     {'col': 11, 'code': '19',  'name': 'Booking.com'},
     {'col': 18, 'code': '105', 'name': 'MakeMyTrip'},
@@ -50,7 +57,7 @@ def run_checks(su_df, crs_df, dash_raw, col_cfg):
     for _, row in crs_df.iterrows():
         if cfg_int.get('is_active'):
             v = str(row.get(cfg_int['is_active'], '')).strip().upper()
-            if v not in ('TRUE', '1', 'YES', 'ACTIVE', 'Y'):
+            if v != 'TRUE':
                 continue
 
         pid = norm_id(row.get(cfg_int['prop_id'], ''))
@@ -97,7 +104,7 @@ def run_checks(su_df, crs_df, dash_raw, col_cfg):
         obp = parse_obp(row.get(cfg_su['obp'], ''))
 
         pname = str(row.get(cfg_su.get('prop_name') or '', '') or '').strip()
-        ch    = str(row.get(cfg_su.get('channel') or '', '') or '').strip()
+        ch    = norm_id(row.get(cfg_su.get('channel') or '', '') or '')
         ag    = str(row.get(cfg_su.get('app_guests') or '', '') or '').strip()
         ch_name = _CH_NAME.get(ch, ch)
 
@@ -146,11 +153,6 @@ def run_checks(su_df, crs_df, dash_raw, col_cfg):
             })
 
         # Check 2: OBP multiplier values must all be 1
-        def _is_not_one(v):
-            try:
-                return float(v) != 1.0
-            except (ValueError, TypeError):
-                return True  # non-numeric counts as bad
         bad_vals = [(k, v) for k, v in obp.items() if _is_not_one(v)]
         if bad_vals:
             res['obpv'].append({
