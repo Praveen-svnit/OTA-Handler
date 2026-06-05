@@ -4,11 +4,12 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 
-CRS_SHEET_ID    = '1H2lP2zn4Ydeyex504DzmfBwXAX0Ip2H4SIu92DylRLw'
-CRS_SHEET_TAB   = 'CRS DATA'
-DASH_SHEET_ID   = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU'
-DASH_SHEET_TAB  = 'Prop Level Dashboard'
-LOG_SHEET_TAB   = 'Last Checked'          # tab in CRS sheet where run history is stored
+CRS_SHEET_ID   = '1H2lP2zn4Ydeyex504DzmfBwXAX0Ip2H4SIu92DylRLw'
+CRS_SHEET_TAB  = 'CRS DATA'
+DASH_SHEET_ID  = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU'
+DASH_SHEET_TAB = 'Prop Level Dashboard'
+LOG_TAB        = 'Last Checked'
+DETAIL_TAB     = 'Last Run Details'
 
 
 def _gc():
@@ -23,7 +24,7 @@ def fetch_crs() -> pd.DataFrame:
         ws = wb.worksheet(CRS_SHEET_TAB)
     except gspread.exceptions.WorksheetNotFound:
         tabs = [w.title for w in wb.worksheets()]
-        raise Exception(f"Tab '{CRS_SHEET_TAB}' not found. Available tabs: {tabs}")
+        raise Exception(f"Tab '{CRS_SHEET_TAB}' not found. Available: {tabs}")
     rows = ws.get_all_values()
     if not rows:
         return pd.DataFrame()
@@ -46,59 +47,106 @@ def fetch_dashboard() -> list:
     return ws.get_all_values()
 
 
-# ── Last Checked log (stored in CRS sheet, "Last Checked" tab) ───────────────
+# ── Run log helpers ────────────────────────────────────────────────────────────
 
-LOG_HEADERS = [
-    'Run At', 'Run By',
-    'CRS Properties', 'SU Rows Analyzed', 'Excluded (not in CRS)',
-    'Room-Rate Mismatch', 'Applicable Guests',
-    'OBP Multiplier ≠1', 'OBP Extra Occ', 'OBP Missing Occ',
+SUMMARY_HEADERS = [
+    'Run At', 'Run By', 'CRS Properties', 'SU Analyzed', 'Excluded',
+    'Room-Rate', 'App Guests', 'OBP Mult', 'OBP Extra Occ', 'OBP Missing Occ',
     'Missing EP/CP', 'Missing MAP/AP', 'Missing Other', 'Extra in SU',
-    'OTA Live No Mapping', 'Mapped OTA Not Live',
+    'OTA Live No Map', 'Mapped Not Live',
 ]
 
+CHECK_KEYS = ['rr','apg','obpv','obpoe','obpom','rpmicp','rpmimap','rpmi','rpex','chlive','chdead']
 
-def save_run_log(meta: dict, counts: dict, run_by: str = 'unknown'):
-    """Append one row to the Last Checked sheet. Creates the tab if missing."""
+
+def _ensure_tab(wb, title, rows=5000, cols=30):
+    try:
+        return wb.worksheet(title)
+    except gspread.exceptions.WorksheetNotFound:
+        return wb.add_worksheet(title=title, rows=rows, cols=cols)
+
+
+def save_run(meta: dict, results: dict, run_by: str = 'anonymous'):
+    """
+    Save a run:
+      - Append one summary row to LOG_TAB
+      - Overwrite DETAIL_TAB with all detailed result rows from this run
+    """
     gc = _gc()
     wb = gc.open_by_key(CRS_SHEET_ID)
-    try:
-        ws = wb.worksheet(LOG_SHEET_TAB)
-    except gspread.exceptions.WorksheetNotFound:
-        ws = wb.add_worksheet(title=LOG_SHEET_TAB, rows=1000, cols=len(LOG_HEADERS))
-        ws.append_row(LOG_HEADERS)
+    ts = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-    row = [
-        datetime.now().strftime('%Y-%m-%d %H:%M'),
-        run_by,
+    # ── Summary row ───────────────────────────────────────────────────────────
+    log_ws = _ensure_tab(wb, LOG_TAB, rows=2000, cols=len(SUMMARY_HEADERS))
+    if log_ws.row_count < 1 or not log_ws.get_all_values():
+        log_ws.append_row(SUMMARY_HEADERS)
+
+    summary_row = [
+        ts, run_by,
         meta.get('crs_props', ''),
         meta.get('total_analyzed', ''),
         meta.get('su_excluded', ''),
-        counts.get('rr', ''),
-        counts.get('apg', ''),
-        counts.get('obpv', ''),
-        counts.get('obpoe', ''),
-        counts.get('obpom', ''),
-        counts.get('rpmicp', ''),
-        counts.get('rpmimap', ''),
-        counts.get('rpmi', ''),
-        counts.get('rpex', ''),
-        counts.get('chlive', ''),
-        counts.get('chdead', ''),
-    ]
-    ws.append_row(row)
+    ] + [len(results.get(k, [])) for k in CHECK_KEYS]
+    log_ws.append_row(summary_row)
+
+    # ── Full detail rows ───────────────────────────────────────────────────────
+    # Build a flat list of all result rows tagged with check type and run info
+    CHECK_LABELS = {
+        'rr':      'Room-Rate Mismatch',
+        'apg':     'Applicable Guests',
+        'obpv':    'OBP Multiplier ≠1',
+        'obpoe':   'OBP Extra Occ',
+        'obpom':   'OBP Missing Occ',
+        'rpmicp':  'Missing EP/CP',
+        'rpmimap': 'Missing MAP/AP',
+        'rpmi':    'Missing Other',
+        'rpex':    'Extra in SU',
+        'chlive':  'OTA Live No Mapping',
+        'chdead':  'Mapped OTA Not Live',
+        'ncrs':    'Not in CRS',
+    }
+
+    all_rows = []
+    for key, label in CHECK_LABELS.items():
+        for row in results.get(key, []):
+            flat = {'Run At': ts, 'Run By': run_by, 'Check': label}
+            flat.update(row)
+            all_rows.append(flat)
+
+    detail_ws = _ensure_tab(wb, DETAIL_TAB, rows=max(len(all_rows) + 5, 5000), cols=30)
+    detail_ws.clear()
+
+    if all_rows:
+        df = pd.DataFrame(all_rows).fillna('')
+        detail_ws.update([df.columns.tolist()] + df.values.tolist())
+    else:
+        detail_ws.update([['Run At', 'Run By', 'Check', 'Note'],
+                          [ts, run_by, '—', 'No issues found']])
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def fetch_run_log() -> pd.DataFrame:
-    """Read the Last Checked history sheet."""
+def fetch_log() -> pd.DataFrame:
     gc = _gc()
     wb = gc.open_by_key(CRS_SHEET_ID)
     try:
-        ws = wb.worksheet(LOG_SHEET_TAB)
+        ws = wb.worksheet(LOG_TAB)
     except gspread.exceptions.WorksheetNotFound:
-        return pd.DataFrame(columns=LOG_HEADERS)
+        return pd.DataFrame(columns=SUMMARY_HEADERS)
     rows = ws.get_all_values()
     if len(rows) < 2:
-        return pd.DataFrame(columns=LOG_HEADERS)
+        return pd.DataFrame(columns=SUMMARY_HEADERS)
+    return pd.DataFrame(rows[1:], columns=rows[0])
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_details() -> pd.DataFrame:
+    gc = _gc()
+    wb = gc.open_by_key(CRS_SHEET_ID)
+    try:
+        ws = wb.worksheet(DETAIL_TAB)
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
+    rows = ws.get_all_values()
+    if len(rows) < 2:
+        return pd.DataFrame()
     return pd.DataFrame(rows[1:], columns=rows[0])

@@ -1,128 +1,68 @@
 import streamlit as st
 import pandas as pd
-import json
-import ast
-import re
-import io
+import json, ast, re, io
 
-from sheets import fetch_crs, fetch_dashboard, save_run_log, fetch_run_log
+from sheets import fetch_crs, fetch_dashboard, save_run, fetch_log, fetch_details
 
-st.set_page_config(
-    page_title="SU Mapping Checker",
-    layout="wide",
-    page_icon="🔍",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="SU Mapping Checker", layout="wide", page_icon="🔍",
+                   initial_sidebar_state="expanded")
 
-# ── Styling ────────────────────────────────────────────────────────────────────
+# ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ── Font & base ── */
-* { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif !important; }
-body, .stApp { background: #f8fafc; }
-
-/* ── Hide Streamlit chrome ── */
-#MainMenu, footer, header { visibility: hidden; }
-[data-testid="stDecoration"] { display: none; }
-[data-testid="stSidebarNav"] { display: none; }
-
-/* ── Main container ── */
-.block-container { padding: 1.25rem 2rem 2rem !important; max-width: 1400px !important; }
-
-/* ── Sidebar ── */
-[data-testid="stSidebar"] {
-    background: #0f172a !important;
-    border-right: 1px solid #1e293b !important;
+html, body, [class*="css"] {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
 }
+#MainMenu, footer, header { visibility: hidden; }
+[data-testid="stDecoration"], [data-testid="stSidebarNav"] { display: none; }
+
+/* layout */
+.block-container { padding: 1.5rem 2.5rem 2rem !important; max-width: 1400px !important; }
+
+/* sidebar */
+[data-testid="stSidebar"] { background: #0f172a !important; border-right: 1px solid #1e293b !important; }
 [data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
 
-/* ── Section divider ── */
-.sb-divider { height: 1px; background: #1e293b; margin: 8px 0 12px; }
-.sb-label { font-size: 10px; font-weight: 600; text-transform: uppercase;
-            letter-spacing: 1px; color: #475569; padding: 0 0 6px; }
-.sb-nav-item {
-    display: flex; align-items: center; gap: 9px;
-    padding: 8px 10px; border-radius: 6px; cursor: pointer;
-    color: #cbd5e1; font-size: 13px; font-weight: 500;
-    transition: background .15s;
+/* sidebar radio override */
+[data-testid="stSidebar"] .stRadio > div { gap: 2px !important; padding: 0 8px; }
+[data-testid="stSidebar"] .stRadio label {
+  border-radius: 6px; padding: 8px 10px; cursor: pointer;
+  color: #94a3b8 !important; font-size: 13px !important; font-weight: 500 !important;
 }
-.sb-nav-item.active { background: #1e293b; color: #f1f5f9; }
-.sb-nav-item:hover { background: #1e293b; }
-
-/* ── Page header ── */
-.pg-title { font-size: 17px; font-weight: 700; color: #0f172a; margin: 0; }
-.pg-sub   { font-size: 12px; color: #64748b; margin-top: 2px; }
-.pg-badge { background: #eff6ff; color: #2563eb; font-size: 10px; font-weight: 600;
-            padding: 2px 8px; border-radius: 10px; }
-
-/* ── Step label ── */
-.step-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: .5px; color: #64748b; margin: 14px 0 6px;
-}
-.step-num {
-    width: 18px; height: 18px; border-radius: 50%; background: #e2e8f0;
-    color: #475569; font-size: 10px; font-weight: 700;
-    display: inline-flex; align-items: center; justify-content: center;
+[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+  background: #1e293b !important; color: #f1f5f9 !important;
 }
 
-/* ── Status badges inside buttons / info ── */
-.inf-row {
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-    padding: 7px 12px; background: white; border: 1px solid #e2e8f0;
-    border-radius: 7px; margin-top: 6px; font-size: 12px; color: #374151;
-}
-.inf-row b { color: #0f172a; }
-
-/* ── Compact metrics ── */
+/* metrics */
 [data-testid="stMetric"] {
-    background: white !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 7px !important;
-    padding: 10px 14px !important;
+  background: white !important; border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important; padding: 10px 16px !important;
 }
 [data-testid="stMetricLabel"] p { font-size: 11px !important; color: #64748b !important; }
-[data-testid="stMetricValue"]   { font-size: 22px !important; font-weight: 700 !important; }
+[data-testid="stMetricValue"]   { font-size: 22px !important; font-weight: 700 !important; color: #0f172a !important; }
 
-/* ── Tabs ── */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 0; border-bottom: 1px solid #e2e8f0;
-    overflow-x: auto; flex-wrap: nowrap;
-}
-.stTabs [data-baseweb="tab"] {
-    font-size: 11px !important; padding: 6px 11px !important;
-    white-space: nowrap; font-weight: 500;
-}
+/* tabs */
+.stTabs [data-baseweb="tab-list"] { gap: 0; border-bottom: 1px solid #e2e8f0; overflow-x: auto; flex-wrap: nowrap; }
+.stTabs [data-baseweb="tab"] { font-size: 11px !important; padding: 6px 12px !important; white-space: nowrap; font-weight: 500; }
 
-/* ── Expanders ── */
-[data-testid="stExpander"] {
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 8px !important;
-    margin-bottom: 6px !important;
-    background: white !important;
-}
-details > summary {
-    font-size: 13px !important; font-weight: 600 !important;
-    color: #374151 !important; padding: 10px 14px !important;
-}
+/* expanders */
+[data-testid="stExpander"] { border: 1px solid #e2e8f0 !important; border-radius: 8px !important; background: white !important; margin-bottom: 6px !important; }
 
-/* ── Select / input ── */
-[data-testid="stSelectbox"] label p,
-[data-testid="stFileUploader"] label p { font-size: 12px !important; color: #374151 !important; }
-
-/* ── Alerts compact ── */
+/* alerts */
 [data-testid="stAlert"] { padding: 7px 12px !important; border-radius: 6px !important; }
 [data-testid="stAlert"] p { font-size: 12px !important; margin: 0 !important; }
 
-/* ── Dataframe ── */
+/* dataframe */
 [data-testid="stDataFrame"] { border: 1px solid #e2e8f0; border-radius: 6px; }
 
-/* ── Caption ── */
+/* caption */
 .stCaption p { font-size: 11px !important; color: #94a3b8 !important; }
 
-/* ── Divider ── */
-hr { margin: 14px 0 !important; border-color: #e2e8f0 !important; }
+/* divider */
+hr { margin: 12px 0 !important; border-color: #e2e8f0 !important; }
+
+/* select label */
+label p { font-size: 12px !important; color: #374151 !important; font-weight: 500 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -137,7 +77,23 @@ CH_MAP = [
     {'col': 34, 'code': '9',   'name': 'Expedia'},
     {'col': 37, 'code': '97',  'name': 'Yatra'},
 ]
-CH_NAME = {c['code']: c['name'] for c in CH_MAP}
+CH_NAME    = {c['code']: c['name'] for c in CH_MAP}
+OTA_OPTIONS = ['Booking.com', 'MakeMyTrip', 'Agoda', 'EMT', 'CT', 'Expedia']
+
+CHECKS = [
+    ('rr',      'Room-Rate Mismatch',   'Room type in PMS Room ID ≠ PMS Rate ID'),
+    ('apg',     'Applicable Guests',    'Non-ch 97 channel has a value in Applicable Guests'),
+    ('obpv',    'OBP Multiplier ≠ 1',   'Multiplier value is not 1'),
+    ('obpoe',   'OBP Extra Occ',        'OBP occupancy > CRS max occ — needs removal'),
+    ('obpom',   'OBP Missing Occ',      'OBP occupancy < CRS max occ — needs to be added'),
+    ('rpmicp',  'Missing — EP/CP',      'EP or CP in CRS not pushed to SU'),
+    ('rpmimap', 'Missing — MAP/AP',     'MAP or AP in CRS not pushed to SU'),
+    ('rpmi',    'Missing — Other',      'Other rate plans in CRS not pushed to SU'),
+    ('rpex',    'Extra in SU',          'Rate plan in SU not found in CRS'),
+    ('chlive',  'OTA Live No Mapping',  'OTA is Live but no SU mapping'),
+    ('chdead',  'Mapped OTA Not Live',  'SU mapping exists but OTA not Live'),
+    ('ncrs',    'Not in CRS',           'SU rows excluded — property not in CRS'),
+]
 
 # ── Utilities ──────────────────────────────────────────────────────────────────
 
@@ -150,26 +106,21 @@ def parse_room(val):
 
 def parse_rate(val):
     p = str(val or '').split('-')
-    return {
-        'propId':   norm_id(p[0]) if p else '',
-        'roomType': norm_id(p[1]) if len(p) > 1 else '',
-        'rateCode': norm_id(p[2]) if len(p) > 2 else '',
-        'suffix':   '-'.join(p[3:]) if len(p) > 3 else '',
-        'raw':      str(val or ''),
-    }
+    return {'propId':   norm_id(p[0]) if p else '',
+            'roomType': norm_id(p[1]) if len(p) > 1 else '',
+            'rateCode': norm_id(p[2]) if len(p) > 2 else '',
+            'suffix':   '-'.join(p[3:]) if len(p) > 3 else '',
+            'raw':      str(val or '')}
 
 def parse_obp(val):
     if val is None: return {}
     s = str(val).strip()
     if s in ('', 'nan', 'None', 'NaN', '{}'): return {}
-    try:
-        obj = json.loads(s)
-        if isinstance(obj, dict): return {str(k): v for k, v in obj.items()}
-    except Exception: pass
-    try:
-        obj = ast.literal_eval(s)
-        if isinstance(obj, dict): return {str(k): v for k, v in obj.items()}
-    except Exception: pass
+    for parser in (json.loads, ast.literal_eval):
+        try:
+            obj = parser(s)
+            if isinstance(obj, dict): return {str(k): v for k, v in obj.items()}
+        except Exception: pass
     return {}
 
 def obp_int_keys(obp):
@@ -185,8 +136,8 @@ def not_one(v):
     try: return float(v) != 1.0
     except (ValueError, TypeError): return True
 
-def auto_detect(cols, *hint_groups):
-    for hints in hint_groups:
+def auto_detect(cols, *groups):
+    for hints in groups:
         hl = [h.lower() for h in hints]
         for col in cols:
             if all(h in col.lower() for h in hl): return col
@@ -203,7 +154,7 @@ def pick_opt(cols, *hints):
 
 # ── File reader ────────────────────────────────────────────────────────────────
 
-def read_su_file(uploaded):
+def read_file(uploaded):
     data = uploaded.read()
     try:
         xl = pd.ExcelFile(io.BytesIO(data))
@@ -229,7 +180,7 @@ def read_su_file(uploaded):
             df = pd.read_csv(io.BytesIO(data), dtype=str, encoding=enc).fillna('')
             return df, ['Sheet1']
         except Exception: continue
-    raise Exception("Could not read file — try saving as .xlsx in Excel and re-uploading.")
+    raise Exception("Could not read file — try saving as .xlsx and re-uploading.")
 
 # ── Check engine ───────────────────────────────────────────────────────────────
 
@@ -243,10 +194,7 @@ def build_dash_map(raw):
 
 def run_checks(su_df, crs_df, dash_raw, col):
     su, ci = col['su'], col['int']
-
-    prop_set = set()
-    rp_set   = set()
-    occ_map  = {}
+    prop_set = set(); rp_set = set(); occ_map = {}
 
     for _, r in crs_df.iterrows():
         if ci.get('is_active'):
@@ -264,8 +212,7 @@ def run_checks(su_df, crs_df, dash_raw, col):
             if mo > 0 and occ_map.get(k, 0) < mo: occ_map[k] = mo
 
     dash = build_dash_map(dash_raw) if dash_raw else {}
-
-    res = {k: [] for k in ['rr','apg','obpv','obpoe','obpom','rpmicp','rpmimap','rpmi','rpex','chlive','chdead','ncrs']}
+    res  = {k: [] for k, _, _ in CHECKS}
 
     su_rp = set(); su_raw = {}; su_ch = set(); names = {}; sfxs = {}
     excl = analyzed = 0
@@ -282,8 +229,9 @@ def run_checks(su_df, crs_df, dash_raw, col):
 
         if not pid or pid not in prop_set:
             excl += 1
-            res['ncrs'].append({'Property ID': pid or '(empty)', 'Property Name': pname, 'Channel': ch,
-                                'PMS Room ID': rm['raw'], 'PMS Rate ID': rt['raw'], 'Reason': 'Not found in CRS'})
+            res['ncrs'].append({'Property ID': pid or '(empty)', 'Property Name': pname,
+                                'Channel': ch, 'PMS Room ID': rm['raw'], 'PMS Rate ID': rt['raw'],
+                                'Reason': 'Not found in CRS'})
             continue
 
         is_yatra = (ch == YATRA)
@@ -292,7 +240,8 @@ def run_checks(su_df, crs_df, dash_raw, col):
 
         if su.get('app_guests') and not is_yatra and ag:
             res['apg'].append({'Property ID': pid, 'Property Name': pname, 'OTA': chn, 'Ch Code': ch,
-                               'PMS Rate ID': rt['raw'], 'Rate Plan': rt['rateCode'], 'Applicable Guests Value': ag,
+                               'PMS Rate ID': rt['raw'], 'Rate Plan': rt['rateCode'],
+                               'Applicable Guests Value': ag,
                                'Issue': f'Ch {ch} has "{ag}" in Applicable Guests — only ch {YATRA} (Yatra) should use this'})
 
         if is_yatra: continue
@@ -301,7 +250,8 @@ def run_checks(su_df, crs_df, dash_raw, col):
         if rm['roomType'] != rt['roomType']:
             res['rr'].append({'Property ID': pid, 'Property Name': pname, 'OTA': chn, 'Ch Code': ch,
                               'PMS Room ID': rm['raw'], 'Room Type (Room)': rm['roomType'],
-                              'PMS Rate ID': rt['raw'], 'Room Type (Rate)': rt['roomType'], 'Rate Plan': rt['rateCode'],
+                              'PMS Rate ID': rt['raw'], 'Room Type (Rate)': rt['roomType'],
+                              'Rate Plan': rt['rateCode'],
                               'Issue': f'Room type "{rm["roomType"]}" ≠ "{rt["roomType"]}"'})
 
         bad = [(k, v) for k, v in obp.items() if not_one(v)]
@@ -312,17 +262,16 @@ def run_checks(su_df, crs_df, dash_raw, col):
 
         ok = f"{pid}|{rt['roomType']}"
         if ci.get('max_occ') and ok in occ_map:
-            mx   = occ_map[ok]
-            kys  = obp_int_keys(obp)
-            ext  = [o for o in kys if o > mx]
-            mis  = [o for o in range(1, mx + 1) if o not in kys]
+            mx  = occ_map[ok]; kys = obp_int_keys(obp)
+            ext = [o for o in kys if o > mx]
+            mis = [o for o in range(1, mx + 1) if o not in kys]
             base = {'Property ID': pid, 'Property Name': pname, 'OTA': chn, 'Ch Code': ch,
                     'PMS Rate ID': rt['raw'], 'Room Type': rt['roomType'], 'Rate Plan': rt['rateCode'],
                     'Internal Max Occ': mx, 'OBP Occupancies in SU': ', '.join(str(o) for o in kys)}
             if ext: res['obpoe'].append({**base, 'Should Be Removed': ', '.join(str(o) for o in ext),
-                                         'Issue': f'Extra in SU: Occ {", ".join(str(o) for o in ext)} — max occ is {mx}'})
+                                         'Issue': f'Extra: Occ {", ".join(str(o) for o in ext)} — max is {mx}'})
             if mis: res['obpom'].append({**base, 'Needs to be Added': ', '.join(str(o) for o in mis),
-                                         'Issue': f'Missing in SU: Occ {", ".join(str(o) for o in mis)} — max occ is {mx}'})
+                                         'Issue': f'Missing: Occ {", ".join(str(o) for o in mis)} — max is {mx}'})
 
         if dash:
             cs = dash.get(pid)
@@ -330,7 +279,7 @@ def run_checks(su_df, crs_df, dash_raw, col):
                 res['chdead'].append({'Property ID': pid, 'Property Name': pname, 'OTA': chn, 'Ch Code': ch,
                                       'PMS Rate ID': rt['raw'], 'Room Type': rt['roomType'], 'Rate Plan': rt['rateCode'],
                                       'Internal Max Occ': occ_map.get(ok, ''),
-                                      'Issue': f'Mapped in SU but {chn} (ch {ch}) is not Live'})
+                                      'Issue': f'Mapped in SU but {chn} (ch {ch}) not Live'})
 
         rk = f"{pid}|{rt['roomType']}|{rt['rateCode']}"
         ck = f"{ch}|{rk}"
@@ -347,14 +296,16 @@ def run_checks(su_df, crs_df, dash_raw, col):
                 if cs and not cs.get(ch_obj['code']): continue
             if f"{ch_obj['code']}|{pid}|{rt_id}|{rc}" not in su_rp:
                 sfx = sfxs.get(f"{pid}|{rt_id}", '')
-                e = {'Property ID': pid, 'Property Name': names.get(pid, ''), 'OTA': ch_obj['name'],
-                     'Ch Code': ch_obj['code'], 'Room Type ID': rt_id, 'Rate Plan Code': rc,
+                e = {'Property ID': pid, 'Property Name': names.get(pid, ''),
+                     'OTA': ch_obj['name'], 'Ch Code': ch_obj['code'],
+                     'Room Type ID': rt_id, 'Rate Plan Code': rc,
                      'PMS Rate ID': f"{pid}-{rt_id}-{rc}-{sfx}" if sfx else f"{pid}-{rt_id}-{rc}",
-                     'Internal Max Occ': occ_map.get(f"{pid}|{rt_id}", ''), 'Issue': 'In CRS but not pushed to SU'}
+                     'Internal Max Occ': occ_map.get(f"{pid}|{rt_id}", ''),
+                     'Issue': 'In CRS but not pushed to SU'}
                 rcu = rc.upper()
-                if rcu in ('EP', 'CP'): res['rpmicp'].append(e)
-                elif rcu in ('MAP', 'AP'): res['rpmimap'].append(e)
-                else: res['rpmi'].append(e)
+                if rcu in ('EP','CP'):    res['rpmicp'].append(e)
+                elif rcu in ('MAP','AP'): res['rpmimap'].append(e)
+                else:                      res['rpmi'].append(e)
 
     for ck in su_rp:
         ch, pid, rt_id, rc = ck.split('|', 3)
@@ -377,26 +328,33 @@ def run_checks(su_df, crs_df, dash_raw, col):
                                       'Issue': f'{ch_obj["name"]} is Live but no SU mapping'})
 
     res['_meta'] = {'crs_props': len(prop_set), 'su_excluded': excl,
-                    'total_analyzed': analyzed, 'occ_map_size': len(occ_map), 'max_occ_col': ci.get('max_occ')}
+                    'total_analyzed': analyzed, 'occ_map_size': len(occ_map),
+                    'max_occ_col': ci.get('max_occ')}
     return res
 
-# ── UI helper ──────────────────────────────────────────────────────────────────
+# ── UI helpers ─────────────────────────────────────────────────────────────────
 
 def show_table(data, key):
     if not data:
-        st.success("✅ No issues found.")
+        st.success('✅ No issues found.')
         return
     df = pd.DataFrame(data)
-    q = st.text_input("Search", key=f"q_{key}", placeholder="Filter rows…", label_visibility="collapsed")
+    q = st.text_input('Search', key=f'q_{key}', placeholder='Filter rows…', label_visibility='collapsed')
     if q:
         mask = df.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
         df = df[mask]
-    st.caption(f"{len(df):,} row(s)")
-    st.dataframe(df, use_container_width=True, height=400)
+    st.caption(f'{len(df):,} row(s)')
+    st.dataframe(df, use_container_width=True, height=400, hide_index=True)
     buf = io.BytesIO()
-    df.to_excel(buf, index=False, engine="openpyxl")
-    st.download_button("⬇️ Download", buf.getvalue(), file_name=f"{key}.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dl_{key}")
+    df.to_excel(buf, index=False, engine='openpyxl')
+    st.download_button('⬇️ Download', buf.getvalue(), file_name=f'{key}.xlsx',
+                       mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                       key=f'dl_{key}')
+
+def section(label):
+    st.markdown(f'<p style="font-size:11px;font-weight:700;text-transform:uppercase;'
+                f'letter-spacing:.6px;color:#94a3b8;margin:16px 0 6px">{label}</p>',
+                unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR
@@ -404,142 +362,184 @@ def show_table(data, key):
 
 with st.sidebar:
     st.markdown("""
-    <div style="padding:20px 16px 8px;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;
-                  letter-spacing:1.2px;color:#3b82f6;margin-bottom:4px;">FabHotels</div>
-      <div style="font-size:15px;font-weight:700;color:#f1f5f9;line-height:1.2;">Revenue Tools</div>
+    <div style="padding:20px 16px 6px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;
+                  letter-spacing:1.2px;color:#3b82f6;margin-bottom:3px">FabHotels</div>
+      <div style="font-size:15px;font-weight:700;color:#f1f5f9">Revenue Tools</div>
     </div>
-    <div class="sb-divider"></div>
-    <div style="padding:0 8px 6px;">
-      <div class="sb-label" style="padding:0 8px 8px;">Tools</div>
-    </div>
+    <div style="height:1px;background:#1e293b;margin:8px 0 10px"></div>
+    <div style="padding:0 16px 6px;font-size:10px;font-weight:600;text-transform:uppercase;
+                letter-spacing:1px;color:#475569">Tools</div>
     """, unsafe_allow_html=True)
 
-    page = st.radio(
-        "page",
-        options=["📊 Mapping Checker", "🕐 Last Checked"],
-        label_visibility="collapsed",
-        key="page_nav",
-    )
-
-    st.markdown("""
-    <style>
-    [data-testid="stSidebar"] .stRadio > div { gap: 2px !important; }
-    [data-testid="stSidebar"] .stRadio label {
-        background: transparent; border-radius: 6px;
-        padding: 7px 10px; cursor: pointer;
-        color: #94a3b8 !important; font-size: 13px !important; font-weight: 500 !important;
-        display: flex; align-items: center;
-    }
-    [data-testid="stSidebar"] .stRadio label:has(input:checked) {
-        background: #1e293b !important; color: #f1f5f9 !important;
-    }
-    [data-testid="stSidebar"] .stRadio [data-testid="stMarkdownContainer"] p { color: inherit !important; }
-    </style>
-    """, unsafe_allow_html=True)
+    page = st.radio('nav', ['📊  Mapping Checker', '🕐  Last Checked', '📡  OTA Data'],
+                    label_visibility='collapsed')
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MAIN
+# PAGE: LAST CHECKED
 # ══════════════════════════════════════════════════════════════════════════════
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Last Checked
-# ══════════════════════════════════════════════════════════════════════════════
-if page == "🕐 Last Checked":
-    st.markdown('<p class="pg-title">Last Checked</p>'
-                '<p class="pg-sub">History of all check runs — visible to everyone with access</p>',
-                unsafe_allow_html=True)
+if page == '🕐  Last Checked':
+    st.markdown('## Last Checked')
+    st.caption('Full results of every saved run — shared across all users')
     st.divider()
 
-    if st.button("🔄 Refresh", key="refresh_log"):
-        fetch_run_log.clear()
+    c1, c2 = st.columns([1, 5])
+    with c1:
+        if st.button('🔄 Refresh', use_container_width=True):
+            fetch_log.clear(); fetch_details.clear()
 
-    with st.spinner("Loading run history…"):
-        try:
-            log_df = fetch_run_log()
-        except Exception as e:
-            st.error(f"Could not load history: {e}")
-            st.stop()
+    try:
+        log_df     = fetch_log()
+        detail_df  = fetch_details()
+    except Exception as e:
+        st.error(f'Could not load data: {e}')
+        st.stop()
 
+    section('Run History (summary)')
     if log_df.empty:
-        st.info("No runs logged yet. Run the Mapping Checker and save a log first.")
+        st.info('No runs saved yet. Run the Mapping Checker and click Save.')
     else:
-        log_df = log_df.iloc[::-1].reset_index(drop=True)   # newest first
-        st.caption(f"{len(log_df)} run(s) recorded")
-        st.dataframe(log_df, use_container_width=True, hide_index=True, height=500)
+        st.dataframe(log_df.iloc[::-1].reset_index(drop=True),
+                     use_container_width=True, hide_index=True, height=220)
+
+    section('Last Saved Run — Full Details')
+    if detail_df.empty:
+        st.info('No detailed results saved yet.')
+    else:
+        check_types = ['All'] + sorted(detail_df['Check'].unique().tolist()) if 'Check' in detail_df.columns else ['All']
+        chosen = st.selectbox('Filter by check type', check_types, key='lc_filter')
+        df = detail_df if chosen == 'All' else detail_df[detail_df['Check'] == chosen]
+
+        q = st.text_input('Search details', placeholder='Property ID, OTA, issue…',
+                          key='lc_search', label_visibility='collapsed')
+        if q:
+            mask = df.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
+            df = df[mask]
+
+        st.caption(f'{len(df):,} row(s)  ·  Run At: {detail_df["Run At"].iloc[0] if "Run At" in detail_df.columns else "—"}')
+        st.dataframe(df, use_container_width=True, hide_index=True, height=480)
 
         buf = io.BytesIO()
-        log_df.to_excel(buf, index=False, engine="openpyxl")
-        st.download_button("⬇️ Download History", buf.getvalue(),
-                           file_name="check_history.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        df.to_excel(buf, index=False, engine='openpyxl')
+        st.download_button('⬇️ Download Details', buf.getvalue(),
+                           file_name='last_run_details.xlsx',
+                           mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Mapping Checker
+# PAGE: OTA DATA
+# ══════════════════════════════════════════════════════════════════════════════
+if page == '📡  OTA Data':
+    st.markdown('## OTA Data')
+    st.caption('Upload data received from an OTA for comparison and analysis')
+    st.divider()
+
+    c1, c2 = st.columns([2, 4])
+    with c1:
+        ota_choice = st.selectbox('Select OTA', OTA_OPTIONS, key='ota_sel')
+    with c2:
+        ota_file = st.file_uploader(f'Upload {ota_choice} data file', type=['xlsx', 'xls', 'csv'],
+                                     key='ota_upload')
+
+    if ota_file:
+        try:
+            with st.spinner('Reading…'):
+                ota_df, ota_sheets = read_file(ota_file)
+            st.success(f'**{ota_choice}** — {len(ota_df):,} rows · {len(ota_df.columns)} columns '
+                       f'· {len(ota_sheets)} sheet(s)')
+
+            section('Preview')
+            q = st.text_input('Search', placeholder='Filter rows…', key='ota_q',
+                              label_visibility='collapsed')
+            df = ota_df.copy()
+            if q:
+                mask = df.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
+                df = df[mask]
+            st.caption(f'{len(df):,} row(s)')
+            st.dataframe(df, use_container_width=True, height=500, hide_index=True)
+
+            buf = io.BytesIO()
+            ota_df.to_excel(buf, index=False, engine='openpyxl')
+            st.download_button('⬇️ Download cleaned', buf.getvalue(),
+                               file_name=f'{ota_choice.lower().replace(".", "")}_data.xlsx',
+                               mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+            st.info('📌 Comparison checks against SU/CRS data coming in Phase 2.')
+        except Exception as e:
+            st.error(str(e))
+    else:
+        st.markdown(f"""
+        <div style="border:1.5px dashed #cbd5e1;border-radius:10px;padding:40px 24px;
+                    text-align:center;color:#94a3b8;background:white">
+          <div style="font-size:28px;margin-bottom:8px">📡</div>
+          <div style="font-weight:600;color:#374151;margin-bottom:4px">Upload {ota_choice} Data</div>
+          <div style="font-size:12px">Drag & drop or use the uploader above · .xlsx / .xls / .csv</div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.stop()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: MAPPING CHECKER
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Header ────────────────────────────────────────────────────────────────────
-hc1, hc2 = st.columns([6, 1])
-with hc1:
-    st.markdown('<p class="pg-title">Mapping Checker</p>'
-                '<p class="pg-sub">Validates SU channel manager data against CRS &amp; Prop Level Dashboard</p>',
+# Header
+hdr1, hdr2 = st.columns([7, 1])
+with hdr1:
+    st.markdown('## Mapping Checker')
+    st.caption('Validates SU channel manager data against CRS & Prop Level Dashboard')
+with hdr2:
+    st.markdown('<div style="text-align:right;padding-top:14px">'
+                '<span style="background:#eff6ff;color:#2563eb;font-size:10px;font-weight:600;'
+                'padding:3px 10px;border-radius:10px">FabHotels Internal</span></div>',
                 unsafe_allow_html=True)
-with hc2:
-    st.markdown('<div style="text-align:right;padding-top:6px;">'
-                '<span class="pg-badge">FabHotels Internal</span></div>', unsafe_allow_html=True)
 
 st.divider()
 
-# ── Step 1 + 2: Upload & Fetch (same row) ─────────────────────────────────────
-st.markdown('<div class="step-pill"><span class="step-num">1</span> Data Sources</div>',
-            unsafe_allow_html=True)
+# ── Step 1: Data sources ───────────────────────────────────────────────────────
+section('Step 1 — Data Sources')
 
-col_up, col_crs, col_dash = st.columns([3, 2, 2])
+up_col, crs_col, dash_col = st.columns([3, 2, 2])
 
-with col_up:
-    uploaded = st.file_uploader("SU Export file", type=["xlsx", "xls", "csv"],
-                                 label_visibility="collapsed",
-                                 help="Upload SU channel manager Excel export — all sheets combined automatically")
+with up_col:
+    uploaded = st.file_uploader('SU Export (.xlsx / .xls / .csv)', type=['xlsx','xls','csv'],
+                                 label_visibility='visible')
     if uploaded:
         try:
-            with st.spinner("Reading…"):
-                su_df, sheets = read_su_file(uploaded)
-            st.session_state['su_df'] = su_df
-            st.success(f"**{len(su_df):,} rows** · {len(sheets)} sheet(s)")
+            with st.spinner('Reading…'):
+                su_df_new, sheets = read_file(uploaded)
+            st.session_state['su_df'] = su_df_new
+            st.success(f'**{len(su_df_new):,} rows** · {len(sheets)} sheet(s): {", ".join(str(s) for s in sheets)}')
         except Exception as e:
             st.error(str(e))
 
-with col_crs:
-    st.caption("CRS Data (Google Sheet)")
-    if st.button("🔄 Fetch CRS", use_container_width=True):
+with crs_col:
+    st.caption('CRS Data — Google Sheet')
+    if st.button('🔄 Fetch CRS', use_container_width=True):
         fetch_crs.clear()
         try:
-            with st.spinner("Fetching…"):
-                _crs = fetch_crs()
-            st.session_state['crs_df'] = _crs
+            with st.spinner('Fetching…'):
+                st.session_state['crs_df'] = fetch_crs()
             st.session_state.pop('crs_err', None)
         except Exception as e:
             st.session_state['crs_err'] = str(e)
     if 'crs_df' in st.session_state:
         d = st.session_state['crs_df']
-        st.success(f"**{len(d):,} rows** · {len(d.columns)} cols")
+        st.success(f'**{len(d):,} rows** · {len(d.columns)} cols')
     elif 'crs_err' in st.session_state:
         st.error(st.session_state['crs_err'])
 
-with col_dash:
-    st.caption("Prop Level Dashboard (optional)")
-    if st.button("🔄 Fetch Dashboard", use_container_width=True):
+with dash_col:
+    st.caption('Prop Level Dashboard — optional')
+    if st.button('🔄 Fetch Dashboard', use_container_width=True):
         fetch_dashboard.clear()
         try:
-            with st.spinner("Fetching…"):
-                _dash = fetch_dashboard()
-            st.session_state['dash_raw'] = _dash
+            with st.spinner('Fetching…'):
+                st.session_state['dash_raw'] = fetch_dashboard()
             st.session_state.pop('dash_err', None)
         except Exception as e:
             st.session_state['dash_err'] = str(e)
     if 'dash_raw' in st.session_state:
-        st.success(f"**{len(st.session_state['dash_raw']) - 1:,} properties** loaded")
+        st.success(f'**{len(st.session_state["dash_raw"]) - 1:,} properties** loaded')
     elif 'dash_err' in st.session_state:
         st.warning(st.session_state['dash_err'])
 
@@ -548,35 +548,34 @@ crs_df   = st.session_state.get('crs_df')
 dash_raw = st.session_state.get('dash_raw')
 
 if su_df is None or crs_df is None:
-    st.info("Upload the SU file and fetch CRS data to continue.")
+    st.info('Upload the SU file and fetch CRS data to continue.')
     st.stop()
 
 su_cols  = list(su_df.columns)
 crs_cols = list(crs_df.columns)
 
-# ── Step 3: Column Mapping ─────────────────────────────────────────────────────
-st.markdown('<div class="step-pill"><span class="step-num">2</span> Column Mapping</div>',
-            unsafe_allow_html=True)
+# ── Step 2: Column mapping ─────────────────────────────────────────────────────
+section('Step 2 — Column Mapping')
 
-with st.expander("SU File Columns", expanded=True):
-    a, b, c, d, e, f = st.columns(6)
-    with a: su_room_id    = st.selectbox("PMS Room ID",    su_cols, index=pick(su_cols, ['pms room'], ['room id'], ['roomid']))
-    with b: su_rate_id    = st.selectbox("PMS Rate ID",    su_cols, index=pick(su_cols, ['pms rate'], ['rate id'], ['rateid']))
-    with c: su_obp        = st.selectbox("OBP Multiplier", su_cols, index=pick(su_cols, ['obp'], ['multiplier'], ['occ']))
-    with d: su_channel    = st.selectbox("Channel Code",   [None]+su_cols, index=pick_opt(su_cols, ['channel'], ['ota']))
-    with e: su_prop_name  = st.selectbox("Property Name",  [None]+su_cols, index=pick_opt(su_cols, ['property name'], ['hotel name'], ['name']))
-    with f: su_app_guests = st.selectbox("Applicable Guests", [None]+su_cols, index=pick_opt(su_cols, ['applicable guests'], ['applicable_guests'], ['appguests']))
+with st.expander('SU File Columns', expanded=True):
+    c1,c2,c3,c4,c5,c6 = st.columns(6)
+    with c1: su_room_id    = st.selectbox('PMS Room ID',       su_cols, index=pick(su_cols, ['pms room'],['room id'],['roomid']))
+    with c2: su_rate_id    = st.selectbox('PMS Rate ID',       su_cols, index=pick(su_cols, ['pms rate'],['rate id'],['rateid']))
+    with c3: su_obp        = st.selectbox('OBP Multiplier',    su_cols, index=pick(su_cols, ['obp'],['multiplier'],['occ']))
+    with c4: su_channel    = st.selectbox('Channel Code',      [None]+su_cols, index=pick_opt(su_cols, ['channel'],['ota']))
+    with c5: su_prop_name  = st.selectbox('Property Name',     [None]+su_cols, index=pick_opt(su_cols, ['property name'],['hotel name'],['name']))
+    with c6: su_app_guests = st.selectbox('Applicable Guests', [None]+su_cols, index=pick_opt(su_cols, ['applicable guests'],['applicable_guests'],['appguests']))
 
-with st.expander("CRS Columns", expanded=True):
-    a, b, c, d, e = st.columns(5)
-    with a: crs_prop_id   = st.selectbox("Property ID",    crs_cols, index=pick(crs_cols, ['property id'], ['prop id'], ['hotel id'], ['property_id']))
-    with b: crs_room_type = st.selectbox("Room Type ID",   crs_cols, index=pick(crs_cols, ['room type'], ['room_type'], ['roomtype']))
-    with c: crs_rate_code = st.selectbox("Rate Plan Code", crs_cols, index=pick(crs_cols, ['rate plan'], ['rate code'], ['rate_plan'], ['ratecode'], ['rate']))
-    with d: crs_max_occ   = st.selectbox("Max Occupancy",  [None]+crs_cols,
-                                          index=pick_opt(crs_cols, ['max occ'], ['max_occ'], ['max occupancy'],
-                                                         ['maximum occupancy'], ['maxocc'], ['occupancy'], ['pax'], ['max pax']))
-    with e: crs_is_active = st.selectbox("Active Filter",  [None]+crs_cols,
-                                          index=pick_opt(crs_cols, ['is_active'], ['is active'], ['active'], ['status']))
+with st.expander('CRS Columns', expanded=True):
+    c1,c2,c3,c4,c5 = st.columns(5)
+    with c1: crs_prop_id   = st.selectbox('Property ID',    crs_cols, index=pick(crs_cols, ['property id'],['prop id'],['hotel id'],['property_id']))
+    with c2: crs_room_type = st.selectbox('Room Type ID',   crs_cols, index=pick(crs_cols, ['room type'],['room_type'],['roomtype']))
+    with c3: crs_rate_code = st.selectbox('Rate Plan Code', crs_cols, index=pick(crs_cols, ['rate plan'],['rate code'],['rate_plan'],['ratecode'],['rate']))
+    with c4: crs_max_occ   = st.selectbox('Max Occupancy',  [None]+crs_cols,
+                                           index=pick_opt(crs_cols, ['max occ'],['max_occ'],['max occupancy'],
+                                                          ['maximum occupancy'],['maxocc'],['occupancy'],['pax'],['max pax']))
+    with c5: crs_is_active = st.selectbox('Active Filter',  [None]+crs_cols,
+                                           index=pick_opt(crs_cols, ['is_active'],['is active'],['active'],['status']))
 
 col_cfg = {
     'su':  {'room_id': su_room_id, 'rate_id': su_rate_id, 'obp': su_obp,
@@ -585,96 +584,81 @@ col_cfg = {
              'max_occ': crs_max_occ, 'is_active': crs_is_active},
 }
 
-with st.expander("🔬 OBP Parse Debug", expanded=False):
-    st.caption("Verify OBP values are being parsed. Key count should be > 0.")
-    rows = []
-    for _, r in su_df.head(8).iterrows():
-        raw = r.get(su_obp, '')
-        parsed = parse_obp(raw)
-        rows.append({'OBP Raw Value': str(raw)[:60], 'Parsed Keys': str(list(parsed.keys())), 'Key count': len(parsed)})
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    st.caption(f"Max Occ column → **{crs_max_occ}** · Active filter → **{crs_is_active}**")
+with st.expander('🔬 OBP Parse Debug', expanded=False):
+    rows = [{'OBP Raw': str(r.get(su_obp,''))[:60],
+             'Parsed Keys': str(list(parse_obp(r.get(su_obp,'')).keys())),
+             'Count': len(parse_obp(r.get(su_obp,'')))}
+            for _, r in su_df.head(8).iterrows()]
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.caption(f'Max Occ col → **{crs_max_occ}** · Active filter → **{crs_is_active}**')
 
-# ── Step 4: Run ────────────────────────────────────────────────────────────────
-st.markdown('<div class="step-pill"><span class="step-num">3</span> Run</div>',
-            unsafe_allow_html=True)
+# ── Step 3: Run ────────────────────────────────────────────────────────────────
+section('Step 3 — Run')
 
-rc1, rc2 = st.columns([2, 5])
-with rc1:
-    run = st.button("🚀 Run All Checks", type="primary", use_container_width=True)
-with rc2:
+btn_col, warn_col = st.columns([2, 5])
+with btn_col:
+    do_run = st.button('🚀 Run All Checks', type='primary', use_container_width=True)
+with warn_col:
     if not crs_max_occ:
-        st.warning("No Max Occupancy column selected — OBP Extra/Missing checks will not run.")
+        st.warning('No Max Occupancy column selected — OBP Extra/Missing checks will be skipped.')
 
-if run:
-    with st.spinner("Running checks…"):
+if do_run:
+    with st.spinner('Running checks…'):
         results = run_checks(su_df, crs_df, dash_raw, col_cfg)
     st.session_state['results'] = results
     st.rerun()
 
-# ── Results ────────────────────────────────────────────────────────────────────
 if 'results' not in st.session_state:
     st.stop()
 
 res  = st.session_state['results']
 meta = res['_meta']
 
+# ── Metrics ────────────────────────────────────────────────────────────────────
 st.divider()
+m1,m2,m3,m4 = st.columns(4)
+m1.metric('CRS Properties',        f"{meta['crs_props']:,}")
+m2.metric('SU Rows Analyzed',      f"{meta['total_analyzed']:,}")
+m3.metric('Excluded (not in CRS)', f"{meta['su_excluded']:,}")
+m4.metric('OCC Map Entries',       f"{meta['occ_map_size']:,}")
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("CRS Properties",        f"{meta['crs_props']:,}")
-m2.metric("SU Rows Analyzed",      f"{meta['total_analyzed']:,}")
-m3.metric("Excluded (not in CRS)", f"{meta['su_excluded']:,}")
-m4.metric("OCC Map Entries",       f"{meta['occ_map_size']:,}")
-
-CHECKS = [
-    ('rr',      "Room-Rate Mismatch",    "Room type in PMS Room ID ≠ PMS Rate ID"),
-    ('apg',     "Applicable Guests",     "Non-ch 97 channel has value in Applicable Guests"),
-    ('obpv',    "OBP Multiplier ≠ 1",    "Multiplier value is not 1"),
-    ('obpoe',   "OBP Extra Occ",         "OBP occupancy > CRS max occ — needs removal"),
-    ('obpom',   "OBP Missing Occ",       "OBP occupancy < CRS max occ — needs to be added"),
-    ('rpmicp',  "Missing — EP/CP",       "EP or CP in CRS not pushed to SU"),
-    ('rpmimap', "Missing — MAP/AP",      "MAP or AP in CRS not pushed to SU"),
-    ('rpmi',    "Missing — Other",       "Other rate plans in CRS not pushed to SU"),
-    ('rpex',    "Extra in SU",           "Rate plan in SU not found in CRS"),
-    ('chlive',  "OTA Live No Mapping",   "OTA is Live but no SU mapping exists"),
-    ('chdead',  "Mapped OTA Not Live",   "SU mapping exists but OTA is not Live"),
-    ('ncrs',    "Not in CRS",            "SU rows excluded — property not in CRS"),
-]
-
-def _icon(k, n):
-    if k == 'ncrs': return '⚫'
-    return '🔴' if n > 0 else '🟢'
-
-tab_labels = [f"{_icon(k, len(res.get(k,[])))} {lbl} ({len(res.get(k,[]))})" for k, lbl, _ in CHECKS]
+# ── Results tabs ───────────────────────────────────────────────────────────────
+def _icon(k, n): return '⚫' if k == 'ncrs' else ('🔴' if n > 0 else '🟢')
+tab_labels = [f"{_icon(k,len(res.get(k,[])))} {lbl} ({len(res.get(k,[]))})" for k,lbl,_ in CHECKS]
 tabs = st.tabs(tab_labels)
-
 for i, (k, lbl, desc) in enumerate(CHECKS):
     with tabs[i]:
         st.caption(desc)
         show_table(res.get(k, []), k)
 
+# ── Save + Export ──────────────────────────────────────────────────────────────
 st.divider()
+sv1, sv2, sv3 = st.columns([2, 2, 3])
 
-lc1, lc2 = st.columns([3, 4])
-with lc1:
-    run_by = st.text_input("Your name (for log)", placeholder="e.g. Praveen", label_visibility="collapsed",
-                            key="run_by_name")
-    if st.button("💾 Save this run to Last Checked log", use_container_width=True):
+with sv1:
+    run_by = st.text_input('Your name', placeholder='e.g. Praveen',
+                            key='run_by', label_visibility='visible')
+with sv2:
+    st.write('')  # vertical align
+    st.write('')
+    if st.button('💾 Save to Last Checked', use_container_width=True):
         try:
-            counts = {k: len(res.get(k, [])) for k, _, _ in CHECKS}
-            save_run_log(meta, counts, run_by=run_by or 'anonymous')
-            fetch_run_log.clear()
-            st.success("Run saved — visible to all users in Last Checked.")
+            with st.spinner('Saving…'):
+                save_run(meta, res, run_by=run_by or 'anonymous')
+            fetch_log.clear(); fetch_details.clear()
+            st.success('Saved — visible to all users in Last Checked.')
         except Exception as e:
-            st.error(f"Could not save log: {e}")
+            st.error(f'Save failed: {e}')
 
-if st.button("📥 Export All to Excel"):
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        for k, lbl, _ in CHECKS:
-            rows = res.get(k, [])
-            if rows:
-                pd.DataFrame(rows).to_excel(writer, sheet_name=lbl[:31], index=False)
-    st.download_button("⬇️ Download Full Report", buf.getvalue(), file_name="su_mapping_report.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+with sv3:
+    st.write(''); st.write('')
+    if st.button('📥 Export All Results to Excel', use_container_width=True):
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+            for k, lbl, _ in CHECKS:
+                rows = res.get(k, [])
+                if rows:
+                    pd.DataFrame(rows).to_excel(writer, sheet_name=lbl[:31], index=False)
+        st.download_button('⬇️ Download', buf.getvalue(), file_name='su_mapping_report.xlsx',
+                           mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                           key='dl_full')
