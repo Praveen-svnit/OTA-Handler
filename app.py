@@ -580,8 +580,20 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
             except Exception:
                 available_tabs = []
 
-            _live_default    = next((i for i, t in enumerate(available_tabs) if 'live'    in t.lower()), 0)
-            _tracker_default = next((i for i, t in enumerate(available_tabs) if 'tracker' in t.lower()), min(1, len(available_tabs)-1))
+            # Channel-configured defaults take priority; fall back to keyword search
+            _cfg_live    = cfg.get('default_live_tab')
+            _cfg_tracker = cfg.get('default_tracker_tab')
+
+            if _cfg_live and _cfg_live in available_tabs:
+                _live_default = available_tabs.index(_cfg_live)
+            else:
+                _live_default = next((i for i, t in enumerate(available_tabs) if 'live' in t.lower()), 0)
+
+            if _cfg_tracker and _cfg_tracker in available_tabs:
+                _tracker_default = available_tabs.index(_cfg_tracker)
+            else:
+                _tracker_default = next((i for i, t in enumerate(available_tabs) if 'tracker' in t.lower()),
+                                       min(1, len(available_tabs)-1))
 
             # User-selected tabs override auto-detected defaults
             _user_live    = st.session_state.get(f'{prefix}_live_tab')
@@ -1232,12 +1244,16 @@ _BCOM_CFG = {
     'status_letter':     'E',
     'status_label':      'BDC Live',
     'sub_status_letter': 'F',
+    'default_live_tab':    None,    # auto-detect "live" in tab name
+    'default_tracker_tab': None,    # auto-detect "tracker" in tab name
 }
 _GOMMT_CFG = {
     'fh_status_letter':  'N',
     'status_letter':     'O',
     'status_label':      'MMT',
     'sub_status_letter': 'P',
+    'default_live_tab':    'Live Sheet',
+    'default_tracker_tab': 'Main',
 }
 
 # ── Dispatch to channel page ──────────────────────────────────────────────────
