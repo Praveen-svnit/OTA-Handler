@@ -719,74 +719,199 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                     m2.metric('In Tracker', f'{len(_ti):,}')
                     m3.metric('Missing', f'{len(missing_ids):,}')
 
-            # ── Filters ───────────────────────────────────────────────────────
-            # Cast to str before sorting to avoid 'str < int' errors when sheet
-            # has mixed-type values in these columns.
-            all_substatus = sorted({str(v) for v in display_pivot['Sub Status'].dropna().tolist()})
-            all_status    = sorted({str(v) for v in display_pivot['Status'].dropna().tolist()})
+            # ── Group-by columns picker (max 5) ───────────────────────────────
+            # Default groupings: Sub Status + Status. User can add up to 3 more.
+            _default_group = [c for c in (substatus_col, status_col) if c]
+            _saved_group   = st.session_state.get(f'{prefix}_group_cols', _default_group)
+            _saved_group   = [c for c in _saved_group if c in cols]  # drop stale
+            if not _saved_group:
+                _saved_group = _default_group
 
-            f1, f2, f3 = st.columns([3, 3, 2])
-            with f1:
-                sel_sub = st.multiselect(
-                    'Filter Sub Status', all_substatus, default=[],
-                    placeholder='All sub-statuses', key=f'{prefix}_piv_sub_filter',
+            gcol1, gcol2 = st.columns([6, 1])
+            with gcol1:
+                group_cols = st.multiselect(
+                    'Group by (max 5)',
+                    options=cols,
+                    default=_saved_group,
+                    max_selections=5,
+                    key=f'{prefix}_group_cols',
                 )
-            with f2:
-                sel_sta = st.multiselect(
-                    f"Filter {cfg['status_label']}", all_status, default=[],
-                    placeholder='All statuses', key=f'{prefix}_piv_sta_filter',
-                )
-            with f3:
-                st.markdown(' ')
-                show_zero = st.checkbox('Hide zero counts', value=True, key=f'{prefix}_piv_hide_zero')
+            with gcol2:
+                st.write(' ')
+                if st.button('Reset', key=f'{prefix}_reset_group', use_container_width=True):
+                    st.session_state.pop(f'{prefix}_group_cols', None)
+                    st.rerun()
 
-            # Apply filters
-            view_pivot = display_pivot.copy()
-            if sel_sub:
-                view_pivot = view_pivot[view_pivot['Sub Status'].isin(sel_sub)]
-            if sel_sta:
-                view_pivot = view_pivot[view_pivot['Status'].isin(sel_sta)]
-            if show_zero:
+            if not group_cols:
+                group_cols = _default_group
+
+            # ── Rebuild pivot if user changed grouping columns ────────────────
+            if group_cols != _default_group:
+                _strip_grp = {c: bdf[c].astype(str).str.strip() for c in group_cols}
+                pivot = (
+                    pd.DataFrame({c: _strip_grp[c] for c in group_cols})
+                      .groupby(group_cols, dropna=False)
+                      .size().reset_index(name='Count')
+                      .sort_values('Count', ascending=False)
+                )
+                # Recompute Missing from Tracker for the new grouping if applicable
+                display_pivot = pivot.copy()
+                if missing_ids is not None and live_df_s is not None:
+                    _all_in_live = all(c in live_df_s.columns for c in group_cols)
+                    if _all_in_live:
+                        live_missing = live_df_s[
+                            live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)
+                        ].copy()
+                        _grp_strips = {c: live_missing[c].astype(str).str.strip() for c in group_cols}
+                        miss_grp = (
+                            pd.DataFrame({c: _grp_strips[c] for c in group_cols})
+                              .groupby(group_cols, dropna=False)
+                              .size().reset_index(name='Missing from Tracker')
+                        )
+                        display_pivot = display_pivot.merge(miss_grp, on=group_cols, how='left')
+                        display_pivot['Missing from Tracker'] = display_pivot['Missing from Tracker'].fillna(0).astype(int)
+
+            # ── Filters: one per grouping column with Select all / Clear ──────
+            st.markdown('<div style="font-size:11px;font-weight:600;color:#64748b;'
+                        'text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px">'
+                        'Filters</div>', unsafe_allow_html=True)
+
+            filters_per_row = 3
+            _selected = {}
+            for i, gc in enumerate(group_cols):
+                if i % filters_per_row == 0:
+                    _frow = st.columns(min(filters_per_row, len(group_cols) - i))
+                _ccol = _frow[i % filters_per_row]
+                with _ccol:
+                    _vals = sorted({str(v) for v in display_pivot[gc].dropna().tolist()})
+                    _key  = f'{prefix}_pivf_{gc}'
+
+                    # Top row: label + Select all / Clear buttons
+                    _lblc, _allc, _clrc = st.columns([4, 1, 1])
+                    with _lblc:
+                        st.caption(gc)
+                    with _allc:
+                        if st.button('All', key=f'{_key}_all', use_container_width=True):
+                            st.session_state[_key] = _vals
+                            st.rerun()
+                    with _clrc:
+                        if st.button('×', key=f'{_key}_clr', use_container_width=True):
+                            st.session_state[_key] = []
+                            st.rerun()
+
+                    _sel = st.multiselect(
+                        ' ', options=_vals,
+                        placeholder=f'All {gc}',
+                        key=_key, label_visibility='collapsed',
+                    )
+                    _selected[gc] = _sel
+
+            _fbar = st.columns([1, 4])
+            with _fbar[0]:
+                show_zero = st.checkbox('Hide zero', value=True, key=f'{prefix}_piv_hide_zero')
+
+            # Apply filters (vectorized — much faster on large pivots)
+            mask = pd.Series(True, index=display_pivot.index)
+            for gc, sel in _selected.items():
+                if sel:
+                    mask &= display_pivot[gc].astype(str).isin(sel)
+            view_pivot = display_pivot[mask]
+            if show_zero and 'Count' in view_pivot.columns:
                 view_pivot = view_pivot[view_pivot['Count'] > 0]
 
             # Totals row
-            total_row = {'Sub Status': '—', 'Status': 'TOTAL', 'Count': int(view_pivot['Count'].sum())}
+            total_row = {c: ('TOTAL' if i == len(group_cols)-1 else '—') for i, c in enumerate(group_cols)}
+            total_row['Count'] = int(view_pivot['Count'].sum())
             if 'Missing from Tracker' in view_pivot.columns:
                 total_row['Missing from Tracker'] = int(view_pivot['Missing from Tracker'].sum())
             view_pivot = pd.concat([view_pivot, pd.DataFrame([total_row])], ignore_index=True)
 
-            # Style the table
-            def _style_pivot(df):
+            # ── Style (skip on very large pivots for speed) ───────────────────
+            _STYLE_LIMIT = 200   # threshold
+
+            def _style_pivot_fast(df):
+                """Vectorized styling — fast even on large tables."""
                 styles = pd.DataFrame('', index=df.index, columns=df.columns)
-                # Bold total row
                 styles.iloc[-1] = 'font-weight:700;background-color:#f1f5f9'
-                # Colour Count column
-                if 'Count' in df.columns:
-                    max_c = df['Count'].iloc[:-1].max() or 1
-                    for i in range(len(df) - 1):
-                        intensity = int(220 - 80 * df['Count'].iloc[i] / max_c)
-                        styles.at[df.index[i], 'Count'] = f'background-color:rgb({intensity},{intensity+20},255);color:#1e3a8a'
-                # Red Missing from Tracker if > 0
-                if 'Missing from Tracker' in df.columns:
-                    for i in range(len(df) - 1):
-                        val = df['Missing from Tracker'].iloc[i]
-                        if val > 0:
-                            styles.at[df.index[i], 'Missing from Tracker'] = 'background-color:#fee2e2;color:#991b1b;font-weight:600'
+                if 'Count' in df.columns and len(df) > 1:
+                    body = df['Count'].iloc[:-1].astype(float)
+                    max_c = body.max() or 1
+                    intensities = (220 - 80 * body / max_c).astype(int)
+                    styles.loc[body.index, 'Count'] = (
+                        'background-color:rgb(' + intensities.astype(str) + ',' +
+                        (intensities + 20).astype(str) + ',255);color:#1e3a8a'
+                    )
+                if 'Missing from Tracker' in df.columns and len(df) > 1:
+                    body = df['Missing from Tracker'].iloc[:-1]
+                    red_mask = body > 0
+                    styles.loc[body.index[red_mask], 'Missing from Tracker'] = (
+                        'background-color:#fee2e2;color:#991b1b;font-weight:600'
+                    )
                 return styles
 
             # Caption
             _live_used    = st.session_state.get(f'{prefix}_live_tab_used', '?')
             _tracker_used = st.session_state.get(f'{prefix}_tracker_tab_used', '?')
             st.caption(
-                f'**{substatus_col}** × **{status_col}** · '
+                f'**{" × ".join(group_cols)}** · '
                 f'{len(view_pivot)-1:,} groups · {int(view_pivot["Count"].iloc[:-1].sum()):,} properties'
                 + (f' · Missing from Tracker vs **{_live_used}** ↔ **{_tracker_used}**' if missing_ids is not None else '')
             )
-            st.dataframe(
-                view_pivot.style.apply(_style_pivot, axis=None),
+
+            # Render with click-to-drill-down
+            _table_to_show = (
+                view_pivot.style.apply(_style_pivot_fast, axis=None)
+                if len(view_pivot) <= _STYLE_LIMIT else view_pivot
+            )
+            _piv_sel = st.dataframe(
+                _table_to_show,
                 use_container_width=True, hide_index=True,
                 height=min(60 + len(view_pivot) * 35, 520),
+                selection_mode='single-row',
+                on_select='rerun',
+                key=f'{prefix}_piv_table_sel',
             )
+
+            # ── Drill-down: click any row to load property-level view ─────────
+            _piv_rows = _piv_sel.selection.rows if hasattr(_piv_sel, 'selection') else []
+            # Exclude the TOTAL row at the end
+            if _piv_rows and _piv_rows[0] < len(view_pivot) - 1:
+                _picked = view_pivot.iloc[_piv_rows[0]]
+
+                # Build mask on bdf for the selected group values
+                _drill_mask = pd.Series(True, index=bdf.index)
+                for gc in group_cols:
+                    _drill_mask &= bdf[gc].astype(str).str.strip() == str(_picked[gc])
+
+                # Identifier columns
+                _prop_id_c   = cols[0] if len(cols) > 0 else None
+                _bdc_id_c    = cols[3] if len(cols) > 3 else None
+                _prop_name_c = next((c for c in cols if 'name' in c.lower()), None)
+                _show = []
+                for c in [_prop_id_c, _bdc_id_c, _prop_name_c, *group_cols]:
+                    if c and c not in _show:
+                        _show.append(c)
+
+                _detail = bdf.loc[_drill_mask.values, _show]
+
+                st.markdown(
+                    '<div style="margin-top:14px;font-size:11px;font-weight:600;color:#64748b;'
+                    'text-transform:uppercase;letter-spacing:.5px">Property View</div>',
+                    unsafe_allow_html=True,
+                )
+                _chips = ' '.join(
+                    f'<span style="background:#eff6ff;color:#1e40af;font-size:11px;'
+                    f'padding:2px 8px;border-radius:10px;margin-right:4px">'
+                    f'{gc}: <b>{_picked[gc]}</b></span>' for gc in group_cols
+                )
+                st.markdown(f'<div style="margin:6px 0 8px">{_chips}</div>', unsafe_allow_html=True)
+                st.caption(f'{len(_detail):,} properties')
+                st.dataframe(_detail, use_container_width=True, hide_index=True, height=380)
+                st.download_button(
+                    '⬇️ Download', _detail.to_csv(index=False).encode('utf-8'),
+                    file_name=f'{prefix}_pivot_drill.csv', mime='text/csv',
+                    key=f'dl_{prefix}_piv_drill',
+                )
 
             # ── Tracker tab config + ID column picker ─────────────────────────
             if available_tabs:
