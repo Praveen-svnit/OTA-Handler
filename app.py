@@ -601,9 +601,69 @@ if page == '📋  Booking.com':
                     m2.metric('In Tracker', f'{len(_ti):,}')
                     m3.metric('Missing', f'{len(missing_ids):,}')
 
-            st.caption(f'**{substatus_col}** × **{status_col}** · {len(bdf):,} properties'
-                       + (' · click Compare to add missing column' if missing_ids is None else ''))
-            st.dataframe(display_pivot, use_container_width=False, hide_index=True, height=420)
+            # ── Filters ───────────────────────────────────────────────────────
+            all_substatus = sorted(display_pivot['Sub Status'].dropna().unique().tolist())
+            all_status    = sorted(display_pivot['Status'].dropna().unique().tolist())
+
+            f1, f2, f3 = st.columns([3, 3, 2])
+            with f1:
+                sel_sub = st.multiselect(
+                    'Filter Sub Status', all_substatus, default=[],
+                    placeholder='All sub-statuses', key='piv_sub_filter',
+                )
+            with f2:
+                sel_sta = st.multiselect(
+                    'Filter BDC Live', all_status, default=[],
+                    placeholder='All statuses', key='piv_sta_filter',
+                )
+            with f3:
+                st.markdown(' ')
+                show_zero = st.checkbox('Hide zero counts', value=True, key='piv_hide_zero')
+
+            # Apply filters
+            view_pivot = display_pivot.copy()
+            if sel_sub:
+                view_pivot = view_pivot[view_pivot['Sub Status'].isin(sel_sub)]
+            if sel_sta:
+                view_pivot = view_pivot[view_pivot['Status'].isin(sel_sta)]
+            if show_zero:
+                view_pivot = view_pivot[view_pivot['Count'] > 0]
+
+            # Totals row
+            total_row = {'Sub Status': '—', 'Status': 'TOTAL', 'Count': int(view_pivot['Count'].sum())}
+            if 'Missing from Tracker' in view_pivot.columns:
+                total_row['Missing from Tracker'] = int(view_pivot['Missing from Tracker'].sum())
+            view_pivot = pd.concat([view_pivot, pd.DataFrame([total_row])], ignore_index=True)
+
+            # Style the table
+            def _style_pivot(df):
+                styles = pd.DataFrame('', index=df.index, columns=df.columns)
+                # Bold total row
+                styles.iloc[-1] = 'font-weight:700;background-color:#f1f5f9'
+                # Colour Count column
+                if 'Count' in df.columns:
+                    max_c = df['Count'].iloc[:-1].max() or 1
+                    for i in range(len(df) - 1):
+                        intensity = int(220 - 80 * df['Count'].iloc[i] / max_c)
+                        styles.at[df.index[i], 'Count'] = f'background-color:rgb({intensity},{intensity+20},255);color:#1e3a8a'
+                # Red Missing from Tracker if > 0
+                if 'Missing from Tracker' in df.columns:
+                    for i in range(len(df) - 1):
+                        val = df['Missing from Tracker'].iloc[i]
+                        if val > 0:
+                            styles.at[df.index[i], 'Missing from Tracker'] = 'background-color:#fee2e2;color:#991b1b;font-weight:600'
+                return styles
+
+            st.caption(
+                f'**{substatus_col}** × **{status_col}** · '
+                f'{len(view_pivot)-1:,} groups · {int(view_pivot["Count"].iloc[:-1].sum()):,} properties'
+                + (' · click Compare to add missing column' if missing_ids is None else '')
+            )
+            st.dataframe(
+                view_pivot.style.apply(_style_pivot, axis=None),
+                use_container_width=True, hide_index=True,
+                height=min(60 + len(view_pivot) * 35, 520),
+            )
 
             if missing_ids:
                 missing_df = live_df_s[live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)].copy()
