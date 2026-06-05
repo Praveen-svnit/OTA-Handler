@@ -539,42 +539,41 @@ if page == '📋  Booking.com':
             pivot.columns = ['Sub Status', 'Status', 'Count']
             pivot = pivot.sort_values(['Sub Status', 'Count'], ascending=[True, False])
 
+            # ── Auto-fetch tracker comparison ─────────────────────────────────
             try:
                 available_tabs = fetch_bcom_tabs()
             except Exception:
                 available_tabs = []
 
-            tr1, tr2, tr3 = st.columns([2, 2, 1])
-            with tr1:
-                live_tab = st.selectbox('Live Properties tab', available_tabs,
-                    index=next((i for i, t in enumerate(available_tabs) if 'live' in t.lower()), 0),
-                    key='bcom_live_tab')
-            with tr2:
-                tracker_tab = st.selectbox('Properties Tracker tab', available_tabs,
-                    index=next((i for i, t in enumerate(available_tabs) if 'tracker' in t.lower()),
-                               min(1, len(available_tabs) - 1)),
-                    key='bcom_tracker_tab')
-            with tr3:
-                st.markdown(' '); st.markdown(' ')
-                run_cmp = st.button('🔍 Compare', key='bcom_compare_btn', use_container_width=True)
+            _live_default    = next((i for i, t in enumerate(available_tabs) if 'live'    in t.lower()), 0)
+            _tracker_default = next((i for i, t in enumerate(available_tabs) if 'tracker' in t.lower()), min(1, len(available_tabs)-1))
 
-            if run_cmp:
-                try:
-                    with st.spinner('Fetching tabs…'):
-                        live_df    = fetch_bcom_tab(live_tab)
-                        tracker_df = fetch_bcom_tab(tracker_tab)
-                    live_id_col    = list(live_df.columns)[0]
-                    tracker_id_col = list(tracker_df.columns)[0]
-                    live_ids    = set(live_df[live_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
-                    tracker_ids = set(tracker_df[tracker_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
-                    missing_ids = live_ids - tracker_ids
-                    st.session_state['bcom_missing_ids'] = missing_ids
-                    st.session_state['bcom_live_ids']    = live_ids
-                    st.session_state['bcom_tracker_ids'] = tracker_ids
-                    st.session_state['bcom_live_df']     = live_df
-                    st.session_state['bcom_live_id_col'] = live_id_col
-                except Exception as e:
-                    st.error(str(e))
+            # Auto-run comparison every time (no button needed)
+            if available_tabs:
+                _live_tab    = available_tabs[_live_default]
+                _tracker_tab = available_tabs[_tracker_default]
+                _cmp_key     = f'bcom_cmp_{_live_tab}_{_tracker_tab}'
+                if _cmp_key not in st.session_state:
+                    try:
+                        with st.spinner('Fetching tracker comparison…'):
+                            live_df    = fetch_bcom_tab(_live_tab)
+                            tracker_df = fetch_bcom_tab(_tracker_tab)
+                        live_id_col    = list(live_df.columns)[0]
+                        tracker_id_col = list(tracker_df.columns)[0]
+                        live_ids    = set(live_df[live_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
+                        tracker_ids = set(tracker_df[tracker_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
+                        missing_ids = live_ids - tracker_ids
+                        st.session_state[_cmp_key]               = True
+                        st.session_state['bcom_missing_ids']     = missing_ids
+                        st.session_state['bcom_live_ids']        = live_ids
+                        st.session_state['bcom_tracker_ids']     = tracker_ids
+                        st.session_state['bcom_live_df']         = live_df
+                        st.session_state['bcom_live_id_col']     = live_id_col
+                        st.session_state['bcom_live_tab_used']   = _live_tab
+                        st.session_state['bcom_tracker_tab_used'] = _tracker_tab
+                    except Exception as e:
+                        st.session_state[_cmp_key] = False
+                        st.warning(f'Tracker comparison failed: {e}')
 
             missing_ids   = st.session_state.get('bcom_missing_ids')
             live_df_s     = st.session_state.get('bcom_live_df')
@@ -654,16 +653,34 @@ if page == '📋  Booking.com':
                             styles.at[df.index[i], 'Missing from Tracker'] = 'background-color:#fee2e2;color:#991b1b;font-weight:600'
                 return styles
 
+            # Caption
+            _live_used    = st.session_state.get('bcom_live_tab_used', '?')
+            _tracker_used = st.session_state.get('bcom_tracker_tab_used', '?')
             st.caption(
                 f'**{substatus_col}** × **{status_col}** · '
                 f'{len(view_pivot)-1:,} groups · {int(view_pivot["Count"].iloc[:-1].sum()):,} properties'
-                + (' · click Compare to add missing column' if missing_ids is None else '')
+                + (f' · Missing from Tracker vs **{_live_used}** ↔ **{_tracker_used}**' if missing_ids is not None else '')
             )
             st.dataframe(
                 view_pivot.style.apply(_style_pivot, axis=None),
                 use_container_width=True, hide_index=True,
                 height=min(60 + len(view_pivot) * 35, 520),
             )
+
+            # ── Tracker tab config (below table) ──────────────────────────────
+            if available_tabs:
+                with st.expander('⚙️ Change comparison tabs', expanded=False):
+                    tc1, tc2 = st.columns(2)
+                    with tc1:
+                        new_live = st.selectbox('Live Properties tab', available_tabs,
+                            index=_live_default, key='bcom_live_tab')
+                    with tc2:
+                        new_tracker = st.selectbox('Properties Tracker tab', available_tabs,
+                            index=_tracker_default, key='bcom_tracker_tab')
+                    if st.button('🔄 Re-run comparison with these tabs', key='bcom_rerun_cmp'):
+                        _new_key = f'bcom_cmp_{new_live}_{new_tracker}'
+                        st.session_state.pop(_new_key, None)
+                        st.rerun()
 
             if missing_ids:
                 missing_df = live_df_s[live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)].copy()
