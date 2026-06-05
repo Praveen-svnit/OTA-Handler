@@ -620,21 +620,21 @@ if page == '📋  Booking.com':
             st.warning('Select Sub Status and Status columns above.')
 
         st.divider()
-      with st.expander('📄 Raw Data (incl. churn)', expanded=False):
-          q = st.text_input('Search', placeholder='Filter rows…', key='bcom_raw_q',
-                            label_visibility='collapsed')
-          view = bdf_raw.copy()
-          if q:
-              mask = view.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
-              view = view[mask]
-          st.caption(f'{len(view):,} row(s)')
-          st.dataframe(view, use_container_width=True, hide_index=True, height=400)
-          buf = io.BytesIO()
-          bdf_raw.to_excel(buf, index=False, engine='openpyxl')
-          st.download_button('⬇️ Download full sheet', buf.getvalue(),
-                             file_name='bcom_data.xlsx',
-                             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                             key='dl_bcom_raw')
+        with st.expander('📄 Raw Data (incl. churn)', expanded=False):
+            q = st.text_input('Search', placeholder='Filter rows…', key='bcom_raw_q',
+                              label_visibility='collapsed')
+            view = bdf_raw.copy()
+            if q:
+                mask = view.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
+                view = view[mask]
+            st.caption(f'{len(view):,} row(s)')
+            st.dataframe(view, use_container_width=True, hide_index=True, height=400)
+            buf = io.BytesIO()
+            bdf_raw.to_excel(buf, index=False, engine='openpyxl')
+            st.download_button('⬇️ Download full sheet', buf.getvalue(),
+                               file_name='bcom_data.xlsx',
+                               mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                               key='dl_bcom_raw')
 
     # ── TAB 2: Hygiene Checks ─────────────────────────────────────────────────
     with bcom_tab2:
