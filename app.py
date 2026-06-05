@@ -28,59 +28,27 @@ html, body, [class*="css"] {
 [data-testid="stSidebar"] { background: #0f172a !important; border-right: 1px solid #1e293b !important; }
 [data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
 
-/* COLLAPSED sidebar toggle — big, obvious, hard to miss */
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"] {
-  position: fixed !important;
-  top: 12px !important;
-  left: 12px !important;
-  z-index: 9999 !important;
-  background: #0f172a !important;
-  color: #f1f5f9 !important;
-  border-radius: 8px !important;
-  padding: 6px 10px !important;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
-  cursor: pointer !important;
-  transition: background 0.15s !important;
-}
-[data-testid="stSidebarCollapsedControl"]:hover,
-[data-testid="collapsedControl"]:hover {
-  background: #1e293b !important;
-}
-[data-testid="stSidebarCollapsedControl"] button,
-[data-testid="collapsedControl"] button {
-  background: transparent !important;
-  color: #f1f5f9 !important;
-  font-size: 18px !important;
-  padding: 4px 8px !important;
-  border: none !important;
-}
-/* Also enlarge the inner SVG icon */
+/* Sidebar expand toggle (when collapsed) — enlarge icon only, no layout changes */
 [data-testid="stSidebarCollapsedControl"] svg,
-[data-testid="collapsedControl"] svg {
+[data-testid="collapsedControl"] svg,
+[data-testid="stExpandSidebarButton"] svg {
   width: 22px !important;
   height: 22px !important;
-  fill: #f1f5f9 !important;
-  color: #f1f5f9 !important;
+}
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"],
+[data-testid="stExpandSidebarButton"] {
+  background: #1e293b !important;
+  border-radius: 6px !important;
+  padding: 6px !important;
 }
 
-/* Sidebar collapse arrow (when expanded) — also more visible */
-[data-testid="stSidebarCollapseButton"],
-[data-testid="baseButton-headerNoPadding"] {
-  background: rgba(241, 245, 249, 0.08) !important;
-  border-radius: 6px !important;
-  padding: 4px !important;
-}
-[data-testid="stSidebarCollapseButton"]:hover,
-[data-testid="baseButton-headerNoPadding"]:hover {
-  background: rgba(241, 245, 249, 0.18) !important;
-}
+/* Sidebar collapse arrow (when expanded) — bigger, more visible */
 [data-testid="stSidebarCollapseButton"] svg,
 [data-testid="baseButton-headerNoPadding"] svg {
   width: 18px !important;
   height: 18px !important;
   color: #cbd5e1 !important;
-  fill: #cbd5e1 !important;
 }
 
 /* sidebar radio override */
@@ -777,26 +745,40 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
             # ── Group-by columns picker (max 5) ───────────────────────────────
             # Default groupings: Sub Status + Status. User can add up to 3 more.
             _default_group = [c for c in (substatus_col, status_col) if c]
-            _saved_group   = st.session_state.get(f'{prefix}_group_cols', _default_group)
-            _saved_group   = [c for c in _saved_group if c in cols]  # drop stale
-            if not _saved_group:
-                _saved_group = _default_group
+
+            # Clean stale session_state — drop column names no longer in the sheet
+            _stored = st.session_state.get(f'{prefix}_group_cols')
+            if _stored is not None:
+                _cleaned = [c for c in _stored if c in cols]
+                if _cleaned != _stored:
+                    st.session_state[f'{prefix}_group_cols'] = _cleaned
 
             gcol1, gcol2 = st.columns([6, 1])
             with gcol1:
-                group_cols = st.multiselect(
-                    'Group by (max 5)',
-                    options=cols,
-                    default=_saved_group,
-                    max_selections=5,
-                    key=f'{prefix}_group_cols',
-                )
+                # If session_state has a valid list, the widget uses it; otherwise default applies
+                if f'{prefix}_group_cols' in st.session_state and st.session_state[f'{prefix}_group_cols']:
+                    group_cols = st.multiselect(
+                        'Group by (max 5)',
+                        options=cols,
+                        max_selections=5,
+                        key=f'{prefix}_group_cols',
+                    )
+                else:
+                    group_cols = st.multiselect(
+                        'Group by (max 5)',
+                        options=cols,
+                        default=_default_group,
+                        max_selections=5,
+                        key=f'{prefix}_group_cols',
+                    )
             with gcol2:
                 st.write(' ')
                 if st.button('Reset', key=f'{prefix}_reset_group', use_container_width=True):
                     st.session_state.pop(f'{prefix}_group_cols', None)
                     st.rerun()
 
+            # Final safety net — drop anything that ISN'T a real column
+            group_cols = [c for c in (group_cols or []) if c in cols]
             if not group_cols:
                 group_cols = _default_group
 
