@@ -595,9 +595,11 @@ if page == '📋  Booking.com':
                 tracker_ids = set(tracker_df[tracker_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
                 missing_ids = live_ids - tracker_ids
 
-                st.session_state['bcom_missing_ids'] = missing_ids
-                st.session_state['bcom_live_df']     = live_df
-                st.session_state['bcom_live_id_col'] = live_id_col
+                st.session_state['bcom_missing_ids']  = missing_ids
+                st.session_state['bcom_live_ids']     = live_ids
+                st.session_state['bcom_tracker_ids']  = tracker_ids
+                st.session_state['bcom_live_df']      = live_df
+                st.session_state['bcom_live_id_col']  = live_id_col
             except Exception as e:
                 st.error(str(e))
 
@@ -629,9 +631,11 @@ if page == '📋  Booking.com':
                 display_pivot['Missing from Tracker'] = display_pivot['Missing from Tracker'].fillna(0).astype(int)
             else:
                 # Can't group by same columns — just show total as a metric
+                _live_ids    = st.session_state.get('bcom_live_ids', set())
+                _tracker_ids = st.session_state.get('bcom_tracker_ids', set())
                 m1, m2, m3 = st.columns(3)
-                m1.metric('Live Properties', f'{len(live_ids):,}')
-                m2.metric('In Tracker',      f'{len(tracker_ids):,}')
+                m1.metric('Live Properties', f'{len(_live_ids):,}')
+                m2.metric('In Tracker',      f'{len(_tracker_ids):,}')
                 m3.metric('Missing',         f'{len(missing_ids):,}')
 
         st.caption(
