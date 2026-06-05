@@ -464,21 +464,36 @@ if page == '📋  Booking.com':
         cols = list(bdf.columns)
         return cols[i] if i < len(cols) else None
 
-    # ── Exclude churn properties ───────────────────────────────────────────────
-    # Churn = any row whose status/substatus contains "churn" (case-insensitive)
-    churn_mask = pd.Series([False] * len(bdf), index=bdf.index)
-    for c in bdf.columns:
-        if bdf[c].dtype == object:
-            churn_mask |= bdf[c].str.strip().str.lower().str.contains('churn', na=False)
+    # ── Exclusions ────────────────────────────────────────────────────────────
+    bdf_raw = bdf.copy()   # keep untouched for raw view
+    cols_all = list(bdf.columns)
 
-    bdf_raw   = bdf.copy()                          # keep full data for raw view
-    bdf       = bdf[~churn_mask].reset_index(drop=True)   # working dataset
-    cols      = list(bdf.columns)
-    churn_cnt = int(churn_mask.sum())
+    # 1. Drop rows where col A (index 0) is blank
+    col_a = cols_all[0] if cols_all else None
+    blank_a_mask = bdf[col_a].str.strip() == '' if col_a else pd.Series(False, index=bdf.index)
+
+    # 2. Drop rows where "FH Status" column value is "churned"
+    fh_status_col = next((c for c in cols_all if c.strip().lower() == 'fh status'), None)
+    if fh_status_col is None:
+        # fallback: find column containing "fh status"
+        fh_status_col = next((c for c in cols_all if 'fh status' in c.strip().lower()), None)
+
+    churned_mask = (
+        bdf[fh_status_col].str.strip().str.lower() == 'churned'
+        if fh_status_col else pd.Series(False, index=bdf.index)
+    )
+
+    exclude_mask = blank_a_mask | churned_mask
+    bdf          = bdf[~exclude_mask].reset_index(drop=True)
+    cols         = list(bdf.columns)
+
+    blank_a_cnt  = int(blank_a_mask.sum())
+    churn_cnt    = int(churned_mask.sum())
 
     st.caption(
         f'{len(bdf):,} active properties · {len(cols)} columns'
-        + (f' · {churn_cnt} churn rows excluded' if churn_cnt else '')
+        + (f' · {blank_a_cnt} blank Col A removed' if blank_a_cnt else '')
+        + (f' · {churn_cnt} churned (FH Status) removed' if churn_cnt else '')
     )
 
     # ── REPORT 1: Live + Sold Out from col I ──────────────────────────────────
