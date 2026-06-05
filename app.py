@@ -499,19 +499,48 @@ if page == '📋  Booking.com':
     # ── REPORT 1: Status & Substatus Summary + Missing from Tracker ──────────
     section('Report 1 — Status & Substatus Summary')
 
-    # Detect substatus and status columns — prefer exact names, exclude .N duplicates
-    def _clean_status_cols(all_cols, keyword):
-        """Return columns matching keyword but not gspread duplicate suffixes like .1 .2"""
-        return [c for c in all_cols
-                if keyword in c.lower()
-                and not c.strip().lower().endswith(tuple(f'.{i}' for i in range(1, 20)))]
+    # Detect substatus and status columns
+    # Exclude gspread duplicate suffixes (.1 .2 …) and unrelated columns
+    _dup_sfx = tuple(f'.{i}' for i in range(1, 20))
 
-    substatus_cols = _clean_status_cols(cols, 'substatus')
-    status_cols    = [c for c in _clean_status_cols(cols, 'status')
-                      if 'substatus' not in c.lower() and 'fh' not in c.lower()]
+    def _is_dup(c):
+        return c.strip().lower().endswith(_dup_sfx)
 
-    substatus_col = substatus_cols[0] if substatus_cols else None
-    status_col    = status_cols[0]    if status_cols    else None
+    # substatus: exact "sub status", "substatus", or starts with either
+    substatus_col = next(
+        (c for c in cols if not _is_dup(c) and
+         ('sub status' in c.lower() or 'substatus' in c.lower())),
+        None,
+    )
+
+    # status: contains "status" but NOT substatus, NOT fh, NOT a duplicate
+    status_col = next(
+        (c for c in cols if not _is_dup(c)
+         and 'status' in c.lower()
+         and 'sub' not in c.lower()
+         and 'fh' not in c.lower()),
+        None,
+    )
+
+    # Manual override if auto-detect fails or user wants to change
+    with st.expander('⚙️ Column configuration', expanded=(substatus_col is None or status_col is None)):
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            substatus_col = st.selectbox(
+                'Sub Status column',
+                [None] + cols,
+                index=([None] + cols).index(substatus_col) if substatus_col in cols else 0,
+                key='bcom_sub_col',
+            )
+        with cc2:
+            status_col = st.selectbox(
+                'Status column',
+                [None] + cols,
+                index=([None] + cols).index(status_col) if status_col in cols else 0,
+                key='bcom_stat_col',
+            )
+        if not substatus_col and not status_col:
+            st.caption('Available columns: ' + ' · '.join(cols[:20]) + (' …' if len(cols) > 20 else ''))
 
     # Build pivot: Sub Status | Status | Count
     if substatus_col and status_col:
@@ -632,9 +661,6 @@ if page == '📋  Booking.com':
                                    key='dl_missing_tracker')
         elif missing_ids is not None:
             st.success('✅ All Live properties are present in the Properties Tracker.')
-
-    else:
-        st.warning('Could not detect substatus / status columns automatically.')
 
     st.divider()
 
