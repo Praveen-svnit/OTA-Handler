@@ -5,6 +5,7 @@ import streamlit as st
 from datetime import datetime
 
 CRS_SHEET_ID   = '1H2lP2zn4Ydeyex504DzmfBwXAX0Ip2H4SIu92DylRLw'
+BCOM_SHEET_ID  = '1vjm8BX1QZKMqXiLjbokCD0R91JvlscXcg5812p_IolI'
 CRS_SHEET_TAB  = 'CRS DATA'
 DASH_SHEET_ID  = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU'
 DASH_SHEET_TAB = 'Prop Level Dashboard'
@@ -25,6 +26,26 @@ def fetch_crs() -> pd.DataFrame:
     except gspread.exceptions.WorksheetNotFound:
         tabs = [w.title for w in wb.worksheets()]
         raise Exception(f"Tab '{CRS_SHEET_TAB}' not found. Available: {tabs}")
+    rows = ws.get_all_values()
+    if not rows:
+        return pd.DataFrame()
+    headers = rows[0]
+    seen, deduped = {}, []
+    for h in headers:
+        if h in seen:
+            seen[h] += 1
+            deduped.append(f"{h}.{seen[h]}")
+        else:
+            seen[h] = 0
+            deduped.append(h)
+    return pd.DataFrame(rows[1:], columns=deduped).fillna('')
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_bcom() -> pd.DataFrame:
+    """Fetch Booking.com property data from the first tab of the BCOM sheet."""
+    gc  = _gc()
+    ws  = gc.open_by_key(BCOM_SHEET_ID).get_worksheet(0)
     rows = ws.get_all_values()
     if not rows:
         return pd.DataFrame()
