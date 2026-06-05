@@ -622,21 +622,40 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         # Default to the channel-configured columns (positional)
         _sub_idx = col_idx(cfg['sub_status_letter'])
         _sta_idx = col_idx(cfg['status_letter'])
-        substatus_col = cols[_sub_idx] if _sub_idx < len(cols) else None
-        status_col    = cols[_sta_idx] if _sta_idx < len(cols) else None
+        _sub_default = cols[_sub_idx] if _sub_idx < len(cols) else None
+        _sta_default = cols[_sta_idx] if _sta_idx < len(cols) else None
 
-        with st.expander('⚙️ Column configuration', expanded=(substatus_col is None or status_col is None)):
+        # CLEAN stale session_state: remove values that no longer exist in cols
+        for _k, _dflt in ((f'{prefix}_sub_col', _sub_default),
+                          (f'{prefix}_stat_col', _sta_default)):
+            _v = st.session_state.get(_k)
+            if _v is not None and _v not in cols:
+                st.session_state.pop(_k, None)
+
+        substatus_col = _sub_default
+        status_col    = _sta_default
+
+        with st.expander('⚙️ Column configuration',
+                         expanded=(substatus_col is None or status_col is None)):
             cc1, cc2 = st.columns(2)
             with cc1:
-                substatus_col = st.selectbox('Sub Status column', [None] + cols,
-                    index=([None] + cols).index(substatus_col) if substatus_col in cols else 0,
-                    key=f'{prefix}_sub_col')
+                substatus_col = st.selectbox(
+                    'Sub Status column', [None] + cols,
+                    index=([None] + cols).index(_sub_default) if _sub_default in cols else 0,
+                    key=f'{prefix}_sub_col',
+                )
             with cc2:
-                status_col = st.selectbox('Status column', [None] + cols,
-                    index=([None] + cols).index(status_col) if status_col in cols else 0,
-                    key=f'{prefix}_stat_col')
+                status_col = st.selectbox(
+                    'Status column', [None] + cols,
+                    index=([None] + cols).index(_sta_default) if _sta_default in cols else 0,
+                    key=f'{prefix}_stat_col',
+                )
             if not substatus_col and not status_col:
                 st.caption('Columns: ' + ' · '.join(cols[:20]) + (' …' if len(cols) > 20 else ''))
+
+        # Final safety: ensure both columns actually exist in bdf
+        if substatus_col not in cols: substatus_col = None
+        if status_col    not in cols: status_col    = None
 
         if substatus_col and status_col:
             pivot = (
