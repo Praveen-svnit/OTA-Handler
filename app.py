@@ -496,6 +496,12 @@ if page == '📋  Booking.com':
         + (f' · {churn_cnt} churned (FH Status) removed' if churn_cnt else '')
     )
 
+    # ── Pre-compute hygiene data (shared across tab2 + tab3) ─────────────────
+    hyg_start = col_idx('N')
+    hyg_end   = col_idx('AH') + 1
+    hyg_cols  = cols[hyg_start:hyg_end]
+    hyg_df    = bdf[hyg_cols].copy() if hyg_cols else pd.DataFrame()
+
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
     bcom_tab1, bcom_tab2, bcom_tab3 = st.tabs(['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries'])
 
@@ -638,79 +644,64 @@ if page == '📋  Booking.com':
 
     # ── TAB 2: Hygiene Checks ─────────────────────────────────────────────────
     with bcom_tab2:
-        hyg_start = col_idx('N')
-        hyg_end   = col_idx('AH') + 1
-        hyg_cols  = cols[hyg_start:hyg_end]
-
-        if not hyg_cols:
+        if hyg_df.empty:
             st.warning('Columns N–AH not found in the sheet.')
-            st.stop()
+        else:
+            summary_rows = []
+            for hc in hyg_cols:
+                total  = len(hyg_df)
+                filled = int(hyg_df[hc].str.strip().ne('').sum())
+                empty  = total - filled
+                pct    = round(filled / total * 100, 1) if total else 0
+                vc_s   = hyg_df[hc].str.strip().replace('', pd.NA).dropna().value_counts()
+                top    = ' · '.join(f'{v} ({n})' for v, n in list(vc_s.head(3).items()))
+                summary_rows.append({
+                    'Check':        hc,
+                    '✅ Filled':    filled,
+                    '❌ Missing':   empty,
+                    'Completion %': pct,
+                    'Top Values':   top,
+                })
 
-        hyg_df = bdf[hyg_cols].copy()
+            summary = pd.DataFrame(summary_rows)
+            avg_pct = round(summary['Completion %'].mean(), 1)
+            issues  = int((summary['Completion %'] < 100).sum())
 
-        # ── Completion summary ────────────────────────────────────────────────
-        summary_rows = []
-        for hc in hyg_cols:
-            total  = len(hyg_df)
-            filled = int(hyg_df[hc].str.strip().ne('').sum())
-            empty  = total - filled
-            pct    = round(filled / total * 100, 1) if total else 0
-            # top values present in this column
-            vc     = hyg_df[hc].str.strip().replace('', pd.NA).dropna().value_counts()
-            top    = ' · '.join(f'{v} ({n})' for v, n in vc.head(3).items())
-            summary_rows.append({
-                'Check':          hc,
-                '✅ Filled':      filled,
-                '❌ Missing':     empty,
-                'Completion %':   pct,
-                'Top Values':     top,
-            })
+            sm1, sm2, sm3 = st.columns(3)
+            sm1.metric('Hygiene Columns',   len(hyg_cols))
+            sm2.metric('Avg Completion',    f'{avg_pct}%')
+            sm3.metric('Columns with Gaps', issues)
 
-        summary = pd.DataFrame(summary_rows)
-        avg_pct = round(summary['Completion %'].mean(), 1)
-        issues  = int((summary['Completion %'] < 100).sum())
+            st.markdown(' ')
 
-        sm1, sm2, sm3 = st.columns(3)
-        sm1.metric('Hygiene Columns', len(hyg_cols))
-        sm2.metric('Avg Completion',  f'{avg_pct}%')
-        sm3.metric('Columns with Gaps', issues)
+            def _cpct(val):
+                if val == 100: return 'background-color:#d1fae5;color:#065f46'
+                if val >= 80:  return 'background-color:#fef9c3;color:#713f12'
+                return 'background-color:#fee2e2;color:#991b1b'
 
-        st.markdown(' ')
-
-        def color_pct(val):
-            if val == 100: return 'background-color:#d1fae5;color:#065f46'
-            if val >= 80:  return 'background-color:#fef9c3;color:#713f12'
-            return 'background-color:#fee2e2;color:#991b1b'
-
-        styled = summary.style.map(color_pct, subset=['Completion %'])
-        st.dataframe(styled, use_container_width=True, hide_index=True, height=560)
+            styled = summary.style.map(_cpct, subset=['Completion %'])
+            st.dataframe(styled, use_container_width=True, hide_index=True, height=560)
 
     # ── TAB 3: Value Summaries ────────────────────────────────────────────────
     with bcom_tab3:
-        section('Value Summaries — per hygiene column (N to AH)')
-        st.caption('Expand any column to see its full value distribution and missing properties')
-
-        hyg_start3 = col_idx('N')
-        hyg_end3   = col_idx('AH') + 1
-        hyg_cols3  = cols[hyg_start3:hyg_end3]
-        hyg_df3    = bdf[hyg_cols3].copy()
-
-        if not hyg_cols3:
+        if hyg_df.empty:
             st.warning('Columns N–AH not found.')
         else:
-            for hc in hyg_cols3:
-                vc = hyg_df3[hc].str.strip().value_counts(dropna=False).reset_index()
-                vc.columns = ['Value', 'Count']
-                vc['Value'] = vc['Value'].fillna('(blank)').replace('', '(blank)')
-                total_col = len(hyg_df3)
-                filled_n  = int(hyg_df3[hc].str.strip().ne('').sum())
-                pct_col   = round(filled_n / total_col * 100, 1) if total_col else 0
-                icon      = '🟢' if pct_col == 100 else ('🟡' if pct_col >= 80 else '🔴')
-                label     = f'{icon} {hc}  ({pct_col}% filled · {filled_n:,}/{total_col:,})'
-                with st.expander(label, expanded=False):
+            section('Value Summaries — per hygiene column (N to AH)')
+            st.caption('Expand any column to see its full value distribution and missing properties')
+            for hc in hyg_cols:
+                total_c  = len(hyg_df)
+                filled_c = int(hyg_df[hc].str.strip().ne('').sum())
+                pct_c    = round(filled_c / total_c * 100, 1) if total_c else 0
+                icon_c   = '🟢' if pct_c == 100 else ('🟡' if pct_c >= 80 else '🔴')
+                label_c  = f'{icon_c} {hc}  ({pct_c}% filled · {filled_c:,}/{total_c:,})'
+                vc_c = hyg_df[hc].str.strip().value_counts(dropna=False).reset_index()
+                vc_c.columns = ['Value', 'Count']
+                vc_c['Value'] = vc_c['Value'].fillna('(blank)').replace('', '(blank)')
+                with st.expander(label_c, expanded=False):
                     c1, c2 = st.columns([2, 3])
                     with c1:
-                        st.dataframe(vc, use_container_width=True, hide_index=True)
+                        st.dataframe(vc_c, use_container_width=True, hide_index=True)
                     with c2:
                         miss = bdf[bdf[hc].str.strip() == ''][cols[:4] + [hc]].copy()
                         if not miss.empty:
@@ -718,13 +709,10 @@ if page == '📋  Booking.com':
                             st.dataframe(miss, use_container_width=True, hide_index=True, height=220)
                             buf = io.BytesIO()
                             miss.to_excel(buf, index=False, engine='openpyxl')
-                            st.download_button(
-                                '⬇️ Download missing',
-                                buf.getvalue(),
-                                file_name=f'missing_{hc[:25]}.xlsx',
-                                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                key=f'dl_hyg_{hc[:20]}',
-                            )
+                            st.download_button('⬇️ Download missing', buf.getvalue(),
+                                               file_name=f'missing_{hc[:25]}.xlsx',
+                                               mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                               key=f'dl_hyg_{hc[:20]}')
                         else:
                             st.success('All properties have a value ✅')
 
