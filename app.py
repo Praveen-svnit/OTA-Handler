@@ -587,18 +587,24 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
             _user_live    = st.session_state.get(f'{prefix}_live_tab')
             _user_tracker = st.session_state.get(f'{prefix}_tracker_tab')
 
+            # User-selected ID column indices (default to col A = 0)
+            _user_live_idx    = st.session_state.get(f'{prefix}_live_id_idx', 0)
+            _user_tracker_idx = st.session_state.get(f'{prefix}_tracker_id_idx', 0)
+
             # Auto-run comparison every time (no button needed)
             if available_tabs:
                 _live_tab    = _user_live    if _user_live    in available_tabs else available_tabs[_live_default]
                 _tracker_tab = _user_tracker if _user_tracker in available_tabs else available_tabs[_tracker_default]
-                _cmp_key     = f'{prefix}_cmp_{_live_tab}_{_tracker_tab}'
+                _cmp_key     = f'{prefix}_cmp_{_live_tab}_{_tracker_tab}_{_user_live_idx}_{_user_tracker_idx}'
                 if _cmp_key not in st.session_state:
                     try:
                         with st.spinner('Fetching tracker comparison…'):
                             live_df    = fetch_tab_fn(_live_tab)
                             tracker_df = fetch_tab_fn(_tracker_tab)
-                        live_id_col    = list(live_df.columns)[0]
-                        tracker_id_col = list(tracker_df.columns)[0]
+                        _lc = list(live_df.columns)
+                        _tc = list(tracker_df.columns)
+                        live_id_col    = _lc[_user_live_idx]    if _user_live_idx    < len(_lc) else _lc[0]
+                        tracker_id_col = _tc[_user_tracker_idx] if _user_tracker_idx < len(_tc) else _tc[0]
                         live_ids    = set(live_df[live_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
                         tracker_ids = set(tracker_df[tracker_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
                         missing_ids = live_ids - tracker_ids
@@ -607,7 +613,9 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                         st.session_state[f'{prefix}_live_ids']        = live_ids
                         st.session_state[f'{prefix}_tracker_ids']     = tracker_ids
                         st.session_state[f'{prefix}_live_df']         = live_df
+                        st.session_state[f'{prefix}_tracker_df']      = tracker_df
                         st.session_state[f'{prefix}_live_id_col']     = live_id_col
+                        st.session_state[f'{prefix}_tracker_id_col']  = tracker_id_col
                         st.session_state[f'{prefix}_live_tab_used']   = _live_tab
                         st.session_state[f'{prefix}_tracker_tab_used'] = _tracker_tab
                     except Exception as e:
@@ -706,20 +714,67 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                 height=min(60 + len(view_pivot) * 35, 520),
             )
 
-            # ── Tracker tab config (below table) ──────────────────────────────
+            # ── Tracker tab config + ID column picker ─────────────────────────
             if available_tabs:
-                with st.expander('⚙️ Change comparison tabs', expanded=False):
+                # Live count summary at the top so the user can verify the match
+                _li_ct = len(st.session_state.get(f'{prefix}_live_ids', []))
+                _ti_ct = len(st.session_state.get(f'{prefix}_tracker_ids', []))
+                _ms_ct = len(st.session_state.get(f'{prefix}_missing_ids', []))
+                _li_col = st.session_state.get(f'{prefix}_live_id_col', '?')
+                _ti_col = st.session_state.get(f'{prefix}_tracker_id_col', '?')
+                tm1, tm2, tm3 = st.columns(3)
+                tm1.metric('Live IDs',     f'{_li_ct:,}', help=f'From column: {_li_col}')
+                tm2.metric('In Tracker',   f'{_ti_ct:,}', help=f'From column: {_ti_col}')
+                tm3.metric('Missing',      f'{_ms_ct:,}',
+                           delta=f'-{_ms_ct}' if _ms_ct else None, delta_color='inverse')
+
+                with st.expander('⚙️ Change comparison tabs / ID columns', expanded=False):
                     tc1, tc2 = st.columns(2)
                     with tc1:
                         new_live = st.selectbox('Live Properties tab', available_tabs,
                             index=_live_default, key=f'{prefix}_live_tab')
+                        # ID column picker for Live tab (reads cached fetched df)
+                        _live_cols = list(st.session_state.get(f'{prefix}_live_df', pd.DataFrame()).columns)
+                        if _live_cols:
+                            st.selectbox(
+                                'Live ID column',
+                                options=list(range(len(_live_cols))),
+                                format_func=lambda i: f'Col {chr(65 + i) if i < 26 else i+1}: {_live_cols[i][:30]}',
+                                index=min(_user_live_idx, len(_live_cols)-1),
+                                key=f'{prefix}_live_id_idx',
+                            )
                     with tc2:
                         new_tracker = st.selectbox('Properties Tracker tab', available_tabs,
                             index=_tracker_default, key=f'{prefix}_tracker_tab')
-                    if st.button('🔄 Re-run comparison with these tabs', key=f'{prefix}_rerun_cmp'):
-                        _new_key = f'{prefix}_cmp_{new_live}_{new_tracker}'
-                        st.session_state.pop(_new_key, None)
+                        _tracker_cols = list(st.session_state.get(f'{prefix}_tracker_df', pd.DataFrame()).columns)
+                        if _tracker_cols:
+                            st.selectbox(
+                                'Tracker ID column',
+                                options=list(range(len(_tracker_cols))),
+                                format_func=lambda i: f'Col {chr(65 + i) if i < 26 else i+1}: {_tracker_cols[i][:30]}',
+                                index=min(_user_tracker_idx, len(_tracker_cols)-1),
+                                key=f'{prefix}_tracker_id_idx',
+                            )
+
+                    if st.button('🔄 Re-run comparison', key=f'{prefix}_rerun_cmp', type='primary'):
+                        # Clear every cmp_key for this prefix so the new combo definitely re-fetches
+                        for k in list(st.session_state.keys()):
+                            if isinstance(k, str) and k.startswith(f'{prefix}_cmp_'):
+                                st.session_state.pop(k, None)
                         st.rerun()
+
+                    # Quick peek of sample IDs to help the user pick correctly
+                    _ld = st.session_state.get(f'{prefix}_live_df')
+                    _td = st.session_state.get(f'{prefix}_tracker_df')
+                    if _ld is not None and _td is not None and not _ld.empty and not _td.empty:
+                        st.markdown('**Sample IDs (first 5 rows)** — confirm both columns look the same')
+                        sc1, sc2 = st.columns(2)
+                        with sc1:
+                            st.caption(f'Live → `{_li_col}`')
+                            st.dataframe(_ld[[_li_col]].head(5), use_container_width=True, hide_index=True)
+                        with sc2:
+                            st.caption(f'Tracker → `{_ti_col}`')
+                            st.dataframe(_td[[_ti_col]].head(5), use_container_width=True, hide_index=True)
 
             if missing_ids:
                 missing_df = live_df_s[live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)].copy()
