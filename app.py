@@ -766,32 +766,122 @@ if page == '📋  Booking.com':
         else:
             section('Value Summaries — per hygiene column (N to AH)')
             st.caption('Expand any column to see its full value distribution and missing properties')
+
+            # Detect helper columns once
+            def _find_col(*keywords):
+                for kw in keywords:
+                    for c in cols:
+                        if kw.lower() in c.lower():
+                            return c
+                return None
+
+            prop_id_col  = _find_col('property id', 'property_id', 'prop id', 'fh id')
+            bdc_id_col   = _find_col('bdc id', 'booking id', 'bdc_id')
+            prop_name_col = _find_col('property name', 'hotel name', 'prop name')
+
             for hc in hyg_cols:
                 total_c  = len(hyg_df)
                 filled_c = int(hyg_df[hc].str.strip().ne('').sum())
+                missing_c = total_c - filled_c
                 pct_c    = round(filled_c / total_c * 100, 1) if total_c else 0
                 icon_c   = '🟢' if pct_c == 100 else ('🟡' if pct_c >= 80 else '🔴')
                 label_c  = f'{icon_c} {hc}  ({pct_c}% filled · {filled_c:,}/{total_c:,})'
-                vc_c = hyg_df[hc].str.strip().value_counts(dropna=False).reset_index()
-                vc_c.columns = ['Value', 'Count']
-                vc_c['Value'] = vc_c['Value'].fillna('(blank)').replace('', '(blank)')
+
                 with st.expander(label_c, expanded=False):
-                    c1, c2 = st.columns([2, 3])
-                    with c1:
-                        st.dataframe(vc_c, use_container_width=True, hide_index=True)
-                    with c2:
-                        miss = bdf[bdf[hc].str.strip() == ''][cols[:4] + [hc]].copy()
-                        if not miss.empty:
-                            st.caption(f'{len(miss):,} properties missing this field')
-                            st.dataframe(miss, use_container_width=True, hide_index=True, height=220)
-                            buf = io.BytesIO()
-                            miss.to_excel(buf, index=False, engine='openpyxl')
-                            st.download_button('⬇️ Download missing', buf.getvalue(),
-                                               file_name=f'missing_{hc[:25]}.xlsx',
-                                               mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                               key=f'dl_hyg_{hc[:20]}')
-                        else:
-                            st.success('All properties have a value ✅')
+                    # ── Special handling: link columns ────────────────────────
+                    is_link_col = 'link' in hc.lower() or 'url' in hc.lower()
+
+                    if is_link_col:
+                        # Table 1: With link vs Without link
+                        sk_status = f'link_status_{hc}'
+                        if sk_status not in st.session_state:
+                            st.session_state[sk_status] = None
+
+                        c1, c2 = st.columns([1, 2])
+                        with c1:
+                            st.markdown('**Summary**')
+                            summary_data = pd.DataFrame([
+                                {'Status': '✅ With Link',    'Count': filled_c},
+                                {'Status': '❌ Without Link', 'Count': missing_c},
+                            ])
+                            sel = st.dataframe(
+                                summary_data,
+                                use_container_width=True,
+                                hide_index=True,
+                                selection_mode='single-row',
+                                on_select='rerun',
+                                key=f'sel_link_{hc}',
+                            )
+                            rows_sel = sel.selection.rows if hasattr(sel, 'selection') else []
+                            if rows_sel:
+                                st.session_state[sk_status] = 'with' if rows_sel[0] == 0 else 'without'
+                            chosen = st.session_state.get(sk_status)
+                            if chosen:
+                                st.caption(f'Showing: **{chosen.title()} Link** properties')
+                            else:
+                                st.caption('Click a row above to view properties →')
+
+                        with c2:
+                            st.markdown('**Properties**')
+                            chosen = st.session_state.get(sk_status)
+                            if chosen is None:
+                                st.info('Select "With Link" or "Without Link" from the table on the left.')
+                            else:
+                                if chosen == 'with':
+                                    mask = bdf[hc].str.strip() != ''
+                                else:
+                                    mask = bdf[hc].str.strip() == ''
+
+                                show_cols = []
+                                if prop_id_col:   show_cols.append(prop_id_col)
+                                if bdc_id_col:    show_cols.append(bdc_id_col)
+                                if prop_name_col: show_cols.append(prop_name_col)
+                                show_cols.append(hc)
+                                # Dedupe while preserving order
+                                show_cols = list(dict.fromkeys(show_cols))
+
+                                detail = bdf.loc[mask, show_cols].copy()
+                                st.caption(f'{len(detail):,} properties')
+
+                                # Make link clickable for "with link" view
+                                col_config = {}
+                                if chosen == 'with':
+                                    col_config[hc] = st.column_config.LinkColumn(hc, display_text='Open ↗')
+
+                                st.dataframe(
+                                    detail, use_container_width=True, hide_index=True,
+                                    height=380, column_config=col_config,
+                                )
+                                buf = io.BytesIO()
+                                detail.to_excel(buf, index=False, engine='openpyxl')
+                                st.download_button(
+                                    f'⬇️ Download {chosen} link properties',
+                                    buf.getvalue(),
+                                    file_name=f'{chosen}_link_{hc[:20]}.xlsx',
+                                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                    key=f'dl_link_{hc[:20]}',
+                                )
+                    else:
+                        # ── Default: value counts ──────────────────────────────
+                        vc_c = hyg_df[hc].str.strip().value_counts(dropna=False).reset_index()
+                        vc_c.columns = ['Value', 'Count']
+                        vc_c['Value'] = vc_c['Value'].fillna('(blank)').replace('', '(blank)')
+                        c1, c2 = st.columns([2, 3])
+                        with c1:
+                            st.dataframe(vc_c, use_container_width=True, hide_index=True)
+                        with c2:
+                            miss = bdf[bdf[hc].str.strip() == ''][cols[:4] + [hc]].copy()
+                            if not miss.empty:
+                                st.caption(f'{len(miss):,} properties missing this field')
+                                st.dataframe(miss, use_container_width=True, hide_index=True, height=220)
+                                buf = io.BytesIO()
+                                miss.to_excel(buf, index=False, engine='openpyxl')
+                                st.download_button('⬇️ Download missing', buf.getvalue(),
+                                                   file_name=f'missing_{hc[:25]}.xlsx',
+                                                   mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                                   key=f'dl_hyg_{hc[:20]}')
+                            else:
+                                st.success('All properties have a value ✅')
 
     st.stop()
 
