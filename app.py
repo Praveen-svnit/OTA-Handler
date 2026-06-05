@@ -431,51 +431,96 @@ if page == '🕐  Last Checked':
 # ══════════════════════════════════════════════════════════════════════════════
 if page == '📡  OTA Data':
     st.markdown('## OTA Data')
-    st.caption('Upload data received from an OTA for comparison and analysis')
+    st.caption('Upload data received from each OTA — one tab per channel')
     st.divider()
 
-    c1, c2 = st.columns([2, 4])
-    with c1:
-        ota_choice = st.selectbox('Select OTA', OTA_OPTIONS, key='ota_sel')
-    with c2:
-        ota_file = st.file_uploader(f'Upload {ota_choice} data file', type=['xlsx', 'xls', 'csv'],
-                                     key='ota_upload')
+    OTA_TABS = [
+        ('Booking.com',  '19',  '🔵'),
+        ('MakeMyTrip',   '105', '🔴'),
+        ('Agoda',        '189', '🟢'),
+        ('Expedia',      '9',   '🟠'),
+        ('EMT',          '217', '🟣'),
+        ('CT',           '351', '⚫'),
+    ]
 
-    if ota_file:
-        try:
-            with st.spinner('Reading…'):
-                ota_df, ota_sheets = read_file(ota_file)
-            st.success(f'**{ota_choice}** — {len(ota_df):,} rows · {len(ota_df.columns)} columns '
-                       f'· {len(ota_sheets)} sheet(s)')
+    tabs = st.tabs([f"{icon} {name}" for name, _, icon in OTA_TABS])
 
-            section('Preview')
-            q = st.text_input('Search', placeholder='Filter rows…', key='ota_q',
-                              label_visibility='collapsed')
-            df = ota_df.copy()
-            if q:
-                mask = df.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
-                df = df[mask]
-            st.caption(f'{len(df):,} row(s)')
-            st.dataframe(df, use_container_width=True, height=500, hide_index=True)
+    for tab, (ota_name, ota_code, ota_icon) in zip(tabs, OTA_TABS):
+        with tab:
+            sk = f'ota_df_{ota_code}'   # session key per OTA
 
-            buf = io.BytesIO()
-            ota_df.to_excel(buf, index=False, engine='openpyxl')
-            st.download_button('⬇️ Download cleaned', buf.getvalue(),
-                               file_name=f'{ota_choice.lower().replace(".", "")}_data.xlsx',
-                               mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            up_col, info_col = st.columns([3, 3])
+            with up_col:
+                f = st.file_uploader(
+                    f'Upload {ota_name} data (.xlsx / .xls / .csv)',
+                    type=['xlsx', 'xls', 'csv'],
+                    key=f'uf_{ota_code}',
+                )
+                if f:
+                    try:
+                        with st.spinner('Reading…'):
+                            df_raw, sheets = read_file(f)
+                        st.session_state[sk] = {'df': df_raw, 'sheets': sheets, 'name': f.name}
+                    except Exception as e:
+                        st.error(str(e))
 
-            st.info('📌 Comparison checks against SU/CRS data coming in Phase 2.')
-        except Exception as e:
-            st.error(str(e))
-    else:
-        st.markdown(f"""
-        <div style="border:1.5px dashed #cbd5e1;border-radius:10px;padding:40px 24px;
-                    text-align:center;color:#94a3b8;background:white">
-          <div style="font-size:28px;margin-bottom:8px">📡</div>
-          <div style="font-weight:600;color:#374151;margin-bottom:4px">Upload {ota_choice} Data</div>
-          <div style="font-size:12px">Drag & drop or use the uploader above · .xlsx / .xls / .csv</div>
-        </div>
-        """, unsafe_allow_html=True)
+            with info_col:
+                if sk in st.session_state:
+                    d   = st.session_state[sk]
+                    df_ = d['df']
+                    st.success(
+                        f"**{d['name']}** — {len(df_):,} rows · "
+                        f"{len(df_.columns)} cols · "
+                        f"{len(d['sheets'])} sheet(s)"
+                    )
+                    buf = io.BytesIO()
+                    df_.to_excel(buf, index=False, engine='openpyxl')
+                    st.download_button(
+                        '⬇️ Download',
+                        buf.getvalue(),
+                        file_name=f'{ota_name.lower().replace(".", "")}_data.xlsx',
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        key=f'dl_ota_{ota_code}',
+                    )
+
+            if sk in st.session_state:
+                df_ = st.session_state[sk]['df']
+                st.markdown('---')
+                qc1, qc2 = st.columns([4, 1])
+                with qc1:
+                    q = st.text_input(
+                        'Search', placeholder='Filter by property, rate plan, room…',
+                        key=f'q_ota_{ota_code}', label_visibility='collapsed',
+                    )
+                with qc2:
+                    if st.button('✕ Clear data', key=f'clr_{ota_code}'):
+                        del st.session_state[sk]
+                        st.rerun()
+
+                view = df_.copy()
+                if q:
+                    mask = view.apply(
+                        lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1
+                    )
+                    view = view[mask]
+
+                st.caption(f'{len(view):,} row(s) shown')
+                st.dataframe(view, use_container_width=True, height=480, hide_index=True)
+                st.info('📌 Comparison checks against SU/CRS data coming in Phase 2.')
+            else:
+                st.markdown(f"""
+                <div style="border:1.5px dashed #cbd5e1;border-radius:10px;padding:36px 24px;
+                            text-align:center;color:#94a3b8;background:white;margin-top:12px">
+                  <div style="font-size:26px;margin-bottom:8px">{ota_icon}</div>
+                  <div style="font-weight:600;color:#374151;margin-bottom:4px">
+                    Upload {ota_name} Data
+                  </div>
+                  <div style="font-size:12px">
+                    Drop the extract you received from {ota_name} · .xlsx / .xls / .csv
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
