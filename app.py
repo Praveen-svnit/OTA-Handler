@@ -1023,6 +1023,19 @@ if page == '📋  Booking.com':
 
             # Drill-down: click a row → show matching properties
             rows_picked = sel_matrix.selection.rows if hasattr(sel_matrix, 'selection') else []
+            # Full matrix export — right under the table
+            st.download_button(
+                '⬇️ Download full matrix',
+                view.to_csv(index=False).encode('utf-8'),
+                file_name='efmlm_matrix.csv',
+                mime='text/csv',
+                key='dl_mx_full',
+            )
+
+            # ── Property View (drill-down) at the bottom ──────────────────────
+            st.divider()
+            section('🏨 Property View')
+
             if rows_picked and rows_picked[0] < len(view):
                 picked = view.iloc[rows_picked[0]]
                 drill_mask = (
@@ -1043,42 +1056,73 @@ if page == '📋  Booking.com':
                         detail_cols.append(c)
 
                 detail = bdf_matrix.loc[drill_mask.values, detail_cols]
+
+                # Selection chips
                 st.markdown(
-                    f'**Selected**: `{picked[col_e]}` · `{picked[col_f]}` · '
-                    f'`{picked[col_l]}` · `{picked[col_m]}` — **{len(detail):,} properties**'
+                    f'<div style="margin-bottom:10px">'
+                    f'<span style="background:#eff6ff;color:#1e40af;font-size:11px;padding:3px 9px;border-radius:10px;margin-right:6px">{col_e}: <b>{picked[col_e]}</b></span>'
+                    f'<span style="background:#eff6ff;color:#1e40af;font-size:11px;padding:3px 9px;border-radius:10px;margin-right:6px">{col_f}: <b>{picked[col_f]}</b></span>'
+                    f'<span style="background:#eff6ff;color:#1e40af;font-size:11px;padding:3px 9px;border-radius:10px;margin-right:6px">{col_l}: <b>{picked[col_l]}</b></span>'
+                    f'<span style="background:#eff6ff;color:#1e40af;font-size:11px;padding:3px 9px;border-radius:10px">{col_m}: <b>{picked[col_m]}</b></span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
-                st.dataframe(detail, use_container_width=True, hide_index=True, height=380)
+                st.caption(f'**{len(detail):,} properties** matching the selection')
+
+                # Search inside the property view
+                q_drill = st.text_input(
+                    'Search', placeholder='Filter properties by ID, name…',
+                    key='mx_drill_q', label_visibility='collapsed',
+                )
+                if q_drill:
+                    mask_q = detail.apply(
+                        lambda r: r.astype(str).str.contains(q_drill, case=False, regex=False).any(), axis=1
+                    )
+                    detail = detail[mask_q]
+
+                st.dataframe(detail, use_container_width=True, hide_index=True, height=420)
                 st.download_button(
-                    '⬇️ Download',
+                    '⬇️ Download selected properties',
                     detail.to_csv(index=False).encode('utf-8'),
                     file_name='efmlm_matrix_drill.csv',
                     mime='text/csv',
                     key='dl_mx_drill',
                 )
             else:
-                st.caption('Click any row in the table to view matching properties →')
+                st.markdown(
+                    '<div style="border:1.5px dashed #cbd5e1;border-radius:8px;padding:30px;text-align:center;color:#94a3b8;background:white">'
+                    '👆 <b>Click any row in the table above</b> to load matching properties here'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
 
-            # Full export
-            st.divider()
-            st.download_button(
-                '⬇️ Download full matrix',
-                view.to_csv(index=False).encode('utf-8'),
-                file_name='efmlm_matrix.csv',
-                mime='text/csv',
-                key='dl_mx_full',
-            )
-
-    # ── Mount each fragment into its tab ──────────────────────────────────────
-    with bcom_tab1: _render_tab1()
-    with bcom_tab2: _render_tab2()
-    with bcom_tab3: _render_tab3()
-    with bcom_tab4: _render_tab4()
+    # ── Mount each fragment into its tab (guarded so st.stop() always runs) ──
+    try:
+        with bcom_tab1: _render_tab1()
+    except Exception as _e:
+        with bcom_tab1: st.error(f'Status tab error: {_e}')
+    try:
+        with bcom_tab2: _render_tab2()
+    except Exception as _e:
+        with bcom_tab2: st.error(f'Hygiene tab error: {_e}')
+    try:
+        with bcom_tab3: _render_tab3()
+    except Exception as _e:
+        with bcom_tab3: st.error(f'Value Summaries tab error: {_e}')
+    try:
+        with bcom_tab4: _render_tab4()
+    except Exception as _e:
+        with bcom_tab4: st.error(f'Matrix tab error: {_e}')
 
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE: MAPPING CHECKER
 # ══════════════════════════════════════════════════════════════════════════════
+
+# Hard guard: if we got here while on a non-Mapping page, do nothing
+if page != '📊  Mapping Checker':
+    st.stop()
 
 # Header
 hdr1, hdr2 = st.columns([7, 1])
