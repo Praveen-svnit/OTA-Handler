@@ -28,6 +28,61 @@ html, body, [class*="css"] {
 [data-testid="stSidebar"] { background: #0f172a !important; border-right: 1px solid #1e293b !important; }
 [data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
 
+/* COLLAPSED sidebar toggle — big, obvious, hard to miss */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] {
+  position: fixed !important;
+  top: 12px !important;
+  left: 12px !important;
+  z-index: 9999 !important;
+  background: #0f172a !important;
+  color: #f1f5f9 !important;
+  border-radius: 8px !important;
+  padding: 6px 10px !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
+  cursor: pointer !important;
+  transition: background 0.15s !important;
+}
+[data-testid="stSidebarCollapsedControl"]:hover,
+[data-testid="collapsedControl"]:hover {
+  background: #1e293b !important;
+}
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="collapsedControl"] button {
+  background: transparent !important;
+  color: #f1f5f9 !important;
+  font-size: 18px !important;
+  padding: 4px 8px !important;
+  border: none !important;
+}
+/* Also enlarge the inner SVG icon */
+[data-testid="stSidebarCollapsedControl"] svg,
+[data-testid="collapsedControl"] svg {
+  width: 22px !important;
+  height: 22px !important;
+  fill: #f1f5f9 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Sidebar collapse arrow (when expanded) — also more visible */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="baseButton-headerNoPadding"] {
+  background: rgba(241, 245, 249, 0.08) !important;
+  border-radius: 6px !important;
+  padding: 4px !important;
+}
+[data-testid="stSidebarCollapseButton"]:hover,
+[data-testid="baseButton-headerNoPadding"]:hover {
+  background: rgba(241, 245, 249, 0.18) !important;
+}
+[data-testid="stSidebarCollapseButton"] svg,
+[data-testid="baseButton-headerNoPadding"] svg {
+  width: 18px !important;
+  height: 18px !important;
+  color: #cbd5e1 !important;
+  fill: #cbd5e1 !important;
+}
+
 /* sidebar radio override */
 [data-testid="stSidebar"] .stRadio > div { gap: 2px !important; padding: 0 8px; }
 [data-testid="stSidebar"] .stRadio label {
