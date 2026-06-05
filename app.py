@@ -451,21 +451,35 @@ if page == '📋  Booking.com':
         st.warning('Sheet returned no data.')
         st.stop()
 
-    cols = list(bdf.columns)
-    st.caption(f'{len(bdf):,} properties · {len(cols)} columns fetched')
-
-    # ── Helper: column letter → index ─────────────────────────────────────────
+    # ── Helper: column letter → 0-based index ─────────────────────────────────
     def col_idx(letter):
         letter = letter.upper().strip()
         result = 0
         for ch in letter:
             result = result * 26 + (ord(ch) - ord('A') + 1)
-        return result - 1   # 0-based
+        return result - 1
 
-    # safe column accessor by letter
     def get_col(letter):
         i = col_idx(letter)
+        cols = list(bdf.columns)
         return cols[i] if i < len(cols) else None
+
+    # ── Exclude churn properties ───────────────────────────────────────────────
+    # Churn = any row whose status/substatus contains "churn" (case-insensitive)
+    churn_mask = pd.Series([False] * len(bdf), index=bdf.index)
+    for c in bdf.columns:
+        if bdf[c].dtype == object:
+            churn_mask |= bdf[c].str.strip().str.lower().str.contains('churn', na=False)
+
+    bdf_raw   = bdf.copy()                          # keep full data for raw view
+    bdf       = bdf[~churn_mask].reset_index(drop=True)   # working dataset
+    cols      = list(bdf.columns)
+    churn_cnt = int(churn_mask.sum())
+
+    st.caption(
+        f'{len(bdf):,} active properties · {len(cols)} columns'
+        + (f' · {churn_cnt} churn rows excluded' if churn_cnt else '')
+    )
 
     # ── REPORT 1: Live + Sold Out from col I ──────────────────────────────────
     section('Report 1 — Property Status (Col I)')
@@ -476,23 +490,18 @@ if page == '📋  Booking.com':
         vc = status_series.value_counts().reset_index()
         vc.columns = ['Status', 'Count']
 
-        live_n     = int((status_series.str.lower() == 'live').sum())
-        soldout_n  = int((status_series.str.lower() == 'sold out').sum())
+        live_n       = int((status_series.str.lower() == 'live').sum())
+        soldout_n    = int((status_series.str.lower() == 'sold out').sum())
         total_active = live_n + soldout_n
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric('🟢 Live',              f'{live_n:,}')
-        m2.metric('🟡 Sold Out',          f'{soldout_n:,}')
-        m3.metric('Total Active',         f'{total_active:,}')
-        m4.metric('Other / Not Live',     f'{len(bdf) - total_active:,}')
+        m1.metric('🟢 Live',          f'{live_n:,}')
+        m2.metric('🟡 Sold Out',      f'{soldout_n:,}')
+        m3.metric('Total Active',     f'{total_active:,}')
+        m4.metric('Other / Not Live', f'{len(bdf) - total_active:,}')
 
         st.markdown(' ')
-        with st.expander('Full status breakdown', expanded=True):
-            c1, c2 = st.columns([2, 3])
-            with c1:
-                st.dataframe(vc, use_container_width=True, hide_index=True)
-            with c2:
-                st.bar_chart(vc.set_index('Status')['Count'])
+        st.dataframe(vc, use_container_width=False, hide_index=True)
     else:
         st.warning('Column I not found in the sheet.')
 
@@ -501,39 +510,28 @@ if page == '📋  Booking.com':
     # ── REPORT 2: Status & Substatus Summary ──────────────────────────────────
     section('Report 2 — Status & Substatus Summary')
 
-    # Auto-detect status / substatus columns by name
     status_cols    = [c for c in cols if 'status'    in c.lower()]
     substatus_cols = [c for c in cols if 'substatus' in c.lower()]
 
     if status_cols or substatus_cols:
-        all_s_cols = list(dict.fromkeys(substatus_cols + status_cols))   # substatus first
-        tab_labels = [c for c in all_s_cols]
-        s_tabs = st.tabs(tab_labels)
+        all_s_cols = list(dict.fromkeys(substatus_cols + status_cols))
+        s_tabs = st.tabs(all_s_cols)
         for s_tab, sc in zip(s_tabs, all_s_cols):
             with s_tab:
                 vc2 = bdf[sc].str.strip().value_counts().reset_index()
                 vc2.columns = [sc, 'Count']
-                c1, c2 = st.columns([2, 3])
-                with c1:
-                    st.dataframe(vc2, use_container_width=True, hide_index=True)
-                with c2:
-                    st.bar_chart(vc2.set_index(sc)['Count'])
+                st.dataframe(vc2, use_container_width=False, hide_index=True)
     else:
-        # Fallback: let user pick two columns manually
-        st.info('No columns named "status" or "substatus" detected. Select manually:')
+        st.info('No columns named "status" or "substatus" detected — select manually:')
         c1, c2 = st.columns(2)
         with c1:
-            s_col = st.selectbox('Status column', cols, key='bcom_scol')
+            s_col  = st.selectbox('Status column',    cols,          key='bcom_scol')
         with c2:
             ss_col = st.selectbox('Substatus column', [None] + cols, key='bcom_sscol')
 
         vc2 = bdf[s_col].str.strip().value_counts().reset_index()
         vc2.columns = [s_col, 'Count']
-        cc1, cc2 = st.columns([2, 3])
-        with cc1:
-            st.dataframe(vc2, use_container_width=True, hide_index=True)
-        with cc2:
-            st.bar_chart(vc2.set_index(s_col)['Count'])
+        st.dataframe(vc2, use_container_width=False, hide_index=True)
 
         if ss_col:
             pivot = bdf.groupby([s_col, ss_col]).size().reset_index(name='Count')
@@ -546,19 +544,18 @@ if page == '📋  Booking.com':
     section('Report 3 — Hygiene Checks (Col N to AH)')
 
     hyg_start = col_idx('N')
-    hyg_end   = col_idx('AH') + 1          # inclusive
+    hyg_end   = col_idx('AH') + 1
     hyg_cols  = cols[hyg_start:hyg_end]
 
     if hyg_cols:
         hyg_df = bdf[hyg_cols].copy()
 
-        # Build summary: for each column count filled vs empty
         summary_rows = []
         for hc in hyg_cols:
-            total   = len(hyg_df)
-            filled  = int(hyg_df[hc].str.strip().ne('').sum())
-            empty   = total - filled
-            pct     = round(filled / total * 100, 1) if total else 0
+            total  = len(hyg_df)
+            filled = int(hyg_df[hc].str.strip().ne('').sum())
+            empty  = total - filled
+            pct    = round(filled / total * 100, 1) if total else 0
             summary_rows.append({
                 'Check':        hc,
                 '✅ Filled':    filled,
@@ -567,8 +564,6 @@ if page == '📋  Booking.com':
             })
 
         summary = pd.DataFrame(summary_rows)
-
-        # Overall hygiene score
         avg_pct = round(summary['Completion %'].mean(), 1)
         issues  = int((summary['Completion %'] < 100).sum())
 
@@ -579,23 +574,19 @@ if page == '📋  Booking.com':
 
         st.markdown(' ')
 
-        # Color code completion %
         def color_pct(val):
-            if val == 100:   return 'background-color:#d1fae5;color:#065f46'
-            if val >= 80:    return 'background-color:#fef9c3;color:#713f12'
+            if val == 100: return 'background-color:#d1fae5;color:#065f46'
+            if val >= 80:  return 'background-color:#fef9c3;color:#713f12'
             return 'background-color:#fee2e2;color:#991b1b'
 
         styled = summary.style.map(color_pct, subset=['Completion %'])
         st.dataframe(styled, use_container_width=True, hide_index=True, height=600)
 
-        # Detail drill-down: show rows missing a specific check
-        st.markdown(' ')
         with st.expander('🔍 Drill down — rows missing a specific check', expanded=False):
             chosen_check = st.selectbox('Select hygiene column', hyg_cols, key='hyg_drill')
             missing_rows = bdf[bdf[chosen_check].str.strip() == ''].copy()
             st.caption(f'{len(missing_rows):,} properties missing **{chosen_check}**')
             if not missing_rows.empty:
-                # Show first ~5 cols + the hygiene col for context
                 display_cols = cols[:5] + ([chosen_check] if chosen_check not in cols[:5] else [])
                 st.dataframe(missing_rows[display_cols], use_container_width=True,
                              hide_index=True, height=360)
@@ -606,22 +597,21 @@ if page == '📋  Booking.com':
                                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                    key='dl_hyg_drill')
     else:
-        st.warning('Columns N–AH not found in the sheet — the sheet may have fewer columns than expected.')
+        st.warning('Columns N–AH not found.')
 
     st.divider()
 
-    # Raw data view
-    with st.expander('📄 Raw Data', expanded=False):
+    with st.expander('📄 Raw Data (incl. churn)', expanded=False):
         q = st.text_input('Search', placeholder='Filter rows…', key='bcom_raw_q',
                           label_visibility='collapsed')
-        view = bdf.copy()
+        view = bdf_raw.copy()
         if q:
             mask = view.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
             view = view[mask]
         st.caption(f'{len(view):,} row(s)')
         st.dataframe(view, use_container_width=True, hide_index=True, height=400)
         buf = io.BytesIO()
-        bdf.to_excel(buf, index=False, engine='openpyxl')
+        bdf_raw.to_excel(buf, index=False, engine='openpyxl')
         st.download_button('⬇️ Download full sheet', buf.getvalue(),
                            file_name='bcom_data.xlsx',
                            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
