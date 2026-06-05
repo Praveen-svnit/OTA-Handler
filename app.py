@@ -578,8 +578,9 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     hyg_df = bdf_hyg[hyg_cols] if hyg_cols else pd.DataFrame()
 
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
+    _mx_label = '-'.join(cfg.get('matrix_letters', ('E', 'F', 'L', 'M')))
     bcom_tab1, bcom_tab2, bcom_tab3, bcom_tab4 = st.tabs(
-        ['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries', '🗂 E-F-L-M Matrix']
+        ['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries', f'🗂 {_mx_label} Matrix']
     )
 
     # Each tab is wrapped in @st.fragment so a click inside one tab does NOT
@@ -1113,23 +1114,31 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     # ── TAB 4: E-F-L-M Matrix (excludes ColI = churned) ───────────────────────
     @st.fragment
     def _render_tab4():
-        col_e = cols[4]  if len(cols) > 4  else None
-        col_f = cols[5]  if len(cols) > 5  else None
-        col_i = cols[8]  if len(cols) > 8  else None
-        col_l = cols[11] if len(cols) > 11 else None
-        col_m = cols[12] if len(cols) > 12 else None
+        # Channel-configured matrix grouping columns
+        _mx_letters = cfg.get('matrix_letters', ('E', 'F', 'L', 'M'))
+        _mx_idx     = [col_idx(L) for L in _mx_letters]
+        _picked     = [cols[i] if i < len(cols) else None for i in _mx_idx]
+        col_e, col_f, col_l, col_m = _picked
 
-        if not all([col_e, col_f, col_l, col_m, col_i]):
-            st.warning('Required columns (E, F, I, L, M) not all present.')
+        # Churn filter still uses the channel's FH Status column
+        churn_col = cols[fh_idx] if fh_idx < len(cols) else None
+
+        if not all(_picked):
+            st.warning(f'Required columns ({", ".join(_mx_letters)}) not all present.')
         else:
-            # Filter out ColI = churned
-            colI_strip = bdf[col_i].astype(str).str.strip().str.lower()
-            bdf_matrix = bdf[colI_strip != 'churned'].reset_index(drop=True)
-            excluded   = len(bdf) - len(bdf_matrix)
+            # Filter out churned via configured FH status column
+            if churn_col:
+                churn_strip = bdf[churn_col].astype(str).str.strip().str.lower()
+                bdf_matrix = bdf[churn_strip != 'churned'].reset_index(drop=True)
+                excluded   = len(bdf) - len(bdf_matrix)
+            else:
+                bdf_matrix = bdf
+                excluded   = 0
 
             st.info(
                 f'Grouped by **{col_e}** · **{col_f}** · **{col_l}** · **{col_m}** · '
-                f'{len(bdf_matrix):,} properties (excluded {excluded:,} where {col_i}=Churned)'
+                f'{len(bdf_matrix):,} properties'
+                + (f' (excluded {excluded:,} where {churn_col}=Churned)' if excluded else '')
             )
 
             grp_cols = [col_e, col_f, col_l, col_m]
@@ -1295,6 +1304,7 @@ _BCOM_CFG = {
     'default_live_tab':    None,    # auto-detect "live" in tab name
     'default_tracker_tab': None,    # auto-detect "tracker" in tab name
     'hyg_exclude': [],
+    'matrix_letters': ('E', 'F', 'L', 'M'),
 }
 _GOMMT_CFG = {
     'fh_status_letter':  'N',
@@ -1304,6 +1314,7 @@ _GOMMT_CFG = {
     'default_live_tab':    'Live Sheet',
     'default_tracker_tab': 'Main',
     'hyg_exclude': ['FH Live Prop', 'MMT Shell Status', 'GO-MMT Sub Status', 'Set'],
+    'matrix_letters': ('O', 'P', 'Q', 'R'),
 }
 
 # ── Dispatch to channel page ──────────────────────────────────────────────────
