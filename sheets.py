@@ -61,7 +61,7 @@ def _rows_to_df(rows):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_bcom_tabs() -> list[str]:
+def fetch_bcom_tabs():
     """Return list of tab names in the BCOM sheet."""
     return [w.title for w in _gc().open_by_key(BCOM_SHEET_ID).worksheets()]
 
