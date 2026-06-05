@@ -509,6 +509,17 @@ if page == '📋  Booking.com':
     hyg_cols  = cols[hyg_start:hyg_end]
     hyg_df    = bdf_hyg[hyg_cols].copy() if hyg_cols else pd.DataFrame()
 
+    # ── Performance: pre-strip all hygiene columns once ──────────────────────
+    # Avoids re-running .str.strip() on every rerun / click
+    if not hyg_df.empty:
+        stripped = {hc: bdf_hyg[hc].astype(str).str.strip() for hc in hyg_cols}
+        # Pre-compute value_counts for each hygiene column (used by both tabs)
+        hyg_vcounts = {hc: stripped[hc].value_counts(dropna=False) for hc in hyg_cols}
+        # Pre-compute filled counts (used in summaries)
+        hyg_filled  = {hc: int(stripped[hc].ne('').sum()) for hc in hyg_cols}
+    else:
+        stripped, hyg_vcounts, hyg_filled = {}, {}, {}
+
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
     bcom_tab1, bcom_tab2, bcom_tab3 = st.tabs(['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries'])
 
@@ -734,12 +745,12 @@ if page == '📋  Booking.com':
             st.warning('Columns N–AH not found in the sheet.')
         else:
             summary_rows = []
+            total = len(hyg_df)
             for hc in hyg_cols:
-                total  = len(hyg_df)
-                filled = int(hyg_df[hc].str.strip().ne('').sum())
+                filled = hyg_filled[hc]
                 empty  = total - filled
                 pct    = round(filled / total * 100, 1) if total else 0
-                vc_s   = hyg_df[hc].str.strip().replace('', pd.NA).dropna().value_counts()
+                vc_s   = hyg_vcounts[hc].drop('', errors='ignore')
                 top    = ' · '.join(f'{v} ({n})' for v, n in list(vc_s.head(3).items()))
                 summary_rows.append({
                     'Check':        hc,
@@ -793,13 +804,21 @@ if page == '📋  Booking.com':
                 bdc_id_col = _find_col('booking.com id', 'bdc id', 'booking id', 'bdc_id') or (cols[3] if len(cols) > 3 else None)
             prop_name_col = _find_col('property name', 'hotel name', 'prop name')
 
+            total_c = len(hyg_df)
+            # Pre-build the property base table once (Property ID, BDC ID, Name)
+            base_cols = []
+            if prop_id_col:   base_cols.append(prop_id_col)
+            if bdc_id_col:    base_cols.append(bdc_id_col)
+            if prop_name_col: base_cols.append(prop_name_col)
+            base_cols = list(dict.fromkeys(base_cols))
+            bdf_base = bdf_hyg[base_cols] if base_cols else bdf_hyg.iloc[:, :0]
+
             for hc in hyg_cols:
-                total_c  = len(hyg_df)
-                filled_c = int(hyg_df[hc].str.strip().ne('').sum())
+                filled_c  = hyg_filled[hc]
                 missing_c = total_c - filled_c
-                pct_c    = round(filled_c / total_c * 100, 1) if total_c else 0
-                icon_c   = '🟢' if pct_c == 100 else ('🟡' if pct_c >= 80 else '🔴')
-                label_c  = f'{icon_c} {hc}  ({pct_c}% filled · {filled_c:,}/{total_c:,})'
+                pct_c     = round(filled_c / total_c * 100, 1) if total_c else 0
+                icon_c    = '🟢' if pct_c == 100 else ('🟡' if pct_c >= 80 else '🔴')
+                label_c   = f'{icon_c} {hc}  ({pct_c}% filled · {filled_c:,}/{total_c:,})'
 
                 with st.expander(label_c, expanded=False):
                     # ── Special handling: link columns ────────────────────────
@@ -841,20 +860,15 @@ if page == '📋  Booking.com':
                             if chosen is None:
                                 st.info('Select "With Link" or "Without Link" from the table on the left.')
                             else:
+                                # Use pre-stripped column for speed
+                                col_stripped = stripped[hc]
                                 if chosen == 'with':
-                                    mask = bdf_hyg[hc].str.strip() != ''
+                                    mask = col_stripped.ne('')
                                 else:
-                                    mask = bdf_hyg[hc].str.strip() == ''
+                                    mask = col_stripped.eq('')
 
-                                show_cols = []
-                                if prop_id_col:   show_cols.append(prop_id_col)
-                                if bdc_id_col:    show_cols.append(bdc_id_col)
-                                if prop_name_col: show_cols.append(prop_name_col)
-                                show_cols.append(hc)
-                                # Dedupe while preserving order
-                                show_cols = list(dict.fromkeys(show_cols))
-
-                                detail = bdf_hyg.loc[mask, show_cols].copy()
+                                show_cols = list(base_cols) + ([hc] if hc not in base_cols else [])
+                                detail = bdf_hyg.loc[mask.values, show_cols]
                                 st.caption(f'{len(detail):,} properties')
 
                                 # Make link clickable for "with link" view
@@ -866,18 +880,17 @@ if page == '📋  Booking.com':
                                     detail, use_container_width=True, hide_index=True,
                                     height=380, column_config=col_config,
                                 )
-                                buf = io.BytesIO()
-                                detail.to_excel(buf, index=False, engine='openpyxl')
+                                # CSV is much faster than Excel — instant generation
                                 st.download_button(
                                     f'⬇️ Download {chosen} link properties',
-                                    buf.getvalue(),
-                                    file_name=f'{chosen}_link_{hc[:20]}.xlsx',
-                                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                    detail.to_csv(index=False).encode('utf-8'),
+                                    file_name=f'{chosen}_link_{hc[:20]}.csv',
+                                    mime='text/csv',
                                     key=f'dl_link_{hc[:20]}',
                                 )
                     else:
-                        # ── Default: clickable value counts ────────────────────
-                        vc_c = hyg_df[hc].str.strip().value_counts(dropna=False).reset_index()
+                        # ── Default: clickable value counts (using cached vcounts) ─
+                        vc_c = hyg_vcounts[hc].reset_index()
                         vc_c.columns = ['Value', 'Count']
                         vc_c['Value'] = vc_c['Value'].fillna('(blank)').replace('', '(blank)')
 
@@ -909,31 +922,18 @@ if page == '📋  Booking.com':
                             if chosen_val is None:
                                 st.info('Select a value from the table on the left.')
                             else:
+                                # Use pre-stripped column for speed
+                                col_stripped = stripped[hc]
                                 if chosen_val == '(blank)':
-                                    mask = bdf_hyg[hc].str.strip() == ''
+                                    mask = col_stripped.eq('')
                                 else:
-                                    mask = bdf_hyg[hc].str.strip() == chosen_val
+                                    mask = col_stripped.eq(chosen_val)
 
-                                show_cols = []
-                                if prop_id_col:   show_cols.append(prop_id_col)
-                                if bdc_id_col:    show_cols.append(bdc_id_col)
-                                if prop_name_col: show_cols.append(prop_name_col)
-                                show_cols.append(hc)
-                                show_cols = list(dict.fromkeys(show_cols))
-
-                                detail = bdf_hyg.loc[mask, show_cols].copy()
+                                show_cols = list(base_cols) + ([hc] if hc not in base_cols else [])
+                                detail = bdf_hyg.loc[mask.values, show_cols]
                                 st.caption(f'{len(detail):,} properties')
                                 st.dataframe(detail, use_container_width=True,
                                              hide_index=True, height=320)
-                                buf = io.BytesIO()
-                                detail.to_excel(buf, index=False, engine='openpyxl')
-                                st.download_button(
-                                    f'⬇️ Download',
-                                    buf.getvalue(),
-                                    file_name=f'{hc[:20]}_{str(chosen_val)[:15]}.xlsx',
-                                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                    key=f'dl_val_{hc[:20]}',
-                                )
 
     st.stop()
 
