@@ -876,26 +876,64 @@ if page == '📋  Booking.com':
                                     key=f'dl_link_{hc[:20]}',
                                 )
                     else:
-                        # ── Default: value counts ──────────────────────────────
+                        # ── Default: clickable value counts ────────────────────
                         vc_c = hyg_df[hc].str.strip().value_counts(dropna=False).reset_index()
                         vc_c.columns = ['Value', 'Count']
                         vc_c['Value'] = vc_c['Value'].fillna('(blank)').replace('', '(blank)')
+
+                        sk_val = f'val_sel_{hc}'
+
                         c1, c2 = st.columns([2, 3])
                         with c1:
-                            st.dataframe(vc_c, use_container_width=True, hide_index=True)
-                        with c2:
-                            miss = bdf_hyg[bdf_hyg[hc].str.strip() == ''][cols[:4] + [hc]].copy()
-                            if not miss.empty:
-                                st.caption(f'{len(miss):,} properties missing this field')
-                                st.dataframe(miss, use_container_width=True, hide_index=True, height=220)
-                                buf = io.BytesIO()
-                                miss.to_excel(buf, index=False, engine='openpyxl')
-                                st.download_button('⬇️ Download missing', buf.getvalue(),
-                                                   file_name=f'missing_{hc[:25]}.xlsx',
-                                                   mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                                   key=f'dl_hyg_{hc[:20]}')
+                            st.markdown('**Value Distribution**')
+                            sel = st.dataframe(
+                                vc_c,
+                                use_container_width=True,
+                                hide_index=True,
+                                selection_mode='single-row',
+                                on_select='rerun',
+                                key=f'sel_val_{hc}',
+                            )
+                            rows_sel = sel.selection.rows if hasattr(sel, 'selection') else []
+                            if rows_sel:
+                                st.session_state[sk_val] = vc_c.iloc[rows_sel[0]]['Value']
+                            chosen_val = st.session_state.get(sk_val)
+                            if chosen_val is not None:
+                                st.caption(f'Showing: **{chosen_val}**')
                             else:
-                                st.success('All properties have a value ✅')
+                                st.caption('Click a row to view properties →')
+
+                        with c2:
+                            st.markdown('**Properties**')
+                            chosen_val = st.session_state.get(sk_val)
+                            if chosen_val is None:
+                                st.info('Select a value from the table on the left.')
+                            else:
+                                if chosen_val == '(blank)':
+                                    mask = bdf_hyg[hc].str.strip() == ''
+                                else:
+                                    mask = bdf_hyg[hc].str.strip() == chosen_val
+
+                                show_cols = []
+                                if prop_id_col:   show_cols.append(prop_id_col)
+                                if bdc_id_col:    show_cols.append(bdc_id_col)
+                                if prop_name_col: show_cols.append(prop_name_col)
+                                show_cols.append(hc)
+                                show_cols = list(dict.fromkeys(show_cols))
+
+                                detail = bdf_hyg.loc[mask, show_cols].copy()
+                                st.caption(f'{len(detail):,} properties')
+                                st.dataframe(detail, use_container_width=True,
+                                             hide_index=True, height=320)
+                                buf = io.BytesIO()
+                                detail.to_excel(buf, index=False, engine='openpyxl')
+                                st.download_button(
+                                    f'⬇️ Download',
+                                    buf.getvalue(),
+                                    file_name=f'{hc[:20]}_{str(chosen_val)[:15]}.xlsx',
+                                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                    key=f'dl_val_{hc[:20]}',
+                                )
 
     st.stop()
 
