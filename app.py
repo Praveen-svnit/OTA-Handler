@@ -513,14 +513,13 @@ if page == '📋  Booking.com':
         None,
     )
 
-    # status: contains "status" but NOT substatus, NOT fh, NOT a duplicate
+    # status = col E "BDC Live" — try by name first, then fall back to index 4
     status_col = next(
-        (c for c in cols if not _is_dup(c)
-         and 'status' in c.lower()
-         and 'sub' not in c.lower()
-         and 'fh' not in c.lower()),
+        (c for c in cols if c.strip().lower() == 'bdc live'),
         None,
     )
+    if status_col is None and len(cols) > 4:
+        status_col = cols[4]   # col E (0-based index 4)
 
     # Manual override if auto-detect fails or user wants to change
     with st.expander('⚙️ Column configuration', expanded=(substatus_col is None or status_col is None)):
