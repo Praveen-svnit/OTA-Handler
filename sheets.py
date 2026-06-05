@@ -41,12 +41,8 @@ def fetch_crs() -> pd.DataFrame:
     return pd.DataFrame(rows[1:], columns=deduped).fillna('')
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_bcom() -> pd.DataFrame:
-    """Fetch Booking.com property data from the first tab of the BCOM sheet."""
-    gc  = _gc()
-    ws  = gc.open_by_key(BCOM_SHEET_ID).get_worksheet(0)
-    rows = ws.get_all_values()
+def _rows_to_df(rows):
+    """Convert list-of-lists (row 0 = headers) to a deduplicated-header DataFrame."""
     if not rows:
         return pd.DataFrame()
     headers = rows[0]
@@ -59,6 +55,32 @@ def fetch_bcom() -> pd.DataFrame:
             seen[h] = 0
             deduped.append(h)
     return pd.DataFrame(rows[1:], columns=deduped).fillna('')
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_bcom_tabs() -> list[str]:
+    """Return list of tab names in the BCOM sheet."""
+    return [w.title for w in _gc().open_by_key(BCOM_SHEET_ID).worksheets()]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_bcom_tab(tab_name: str) -> pd.DataFrame:
+    """Fetch any named tab from the BCOM sheet."""
+    gc = _gc()
+    wb = gc.open_by_key(BCOM_SHEET_ID)
+    try:
+        ws = wb.worksheet(tab_name)
+    except gspread.exceptions.WorksheetNotFound:
+        available = [w.title for w in wb.worksheets()]
+        raise Exception(f"Tab '{tab_name}' not found in BCOM sheet. Available: {available}")
+    return _rows_to_df(ws.get_all_values())
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_bcom() -> pd.DataFrame:
+    """Fetch Booking.com property data from the first tab of the BCOM sheet."""
+    ws = _gc().open_by_key(BCOM_SHEET_ID).get_worksheet(0)
+    return _rows_to_df(ws.get_all_values())
 
 
 @st.cache_data(ttl=300, show_spinner=False)

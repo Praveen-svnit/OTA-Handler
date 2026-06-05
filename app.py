@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import json, ast, re, io
 
-from sheets import fetch_crs, fetch_dashboard, save_run, fetch_log, fetch_details, fetch_bcom
+from sheets import fetch_crs, fetch_dashboard, save_run, fetch_log, fetch_details, fetch_bcom, fetch_bcom_tab, fetch_bcom_tabs
 
 st.set_page_config(page_title="SU Mapping Checker", layout="wide", page_icon="🔍",
                    initial_sidebar_state="expanded")
@@ -496,34 +496,8 @@ if page == '📋  Booking.com':
         + (f' · {churn_cnt} churned (FH Status) removed' if churn_cnt else '')
     )
 
-    # ── REPORT 1: Live + Sold Out from col I ──────────────────────────────────
-    section('Report 1 — Property Status (Col I)')
-
-    col_i_name = get_col('I')
-    if col_i_name:
-        status_series = bdf[col_i_name].str.strip()
-        vc = status_series.value_counts().reset_index()
-        vc.columns = ['Status', 'Count']
-
-        live_n       = int((status_series.str.lower() == 'live').sum())
-        soldout_n    = int((status_series.str.lower() == 'sold out').sum())
-        total_active = live_n + soldout_n
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric('🟢 Live',          f'{live_n:,}')
-        m2.metric('🟡 Sold Out',      f'{soldout_n:,}')
-        m3.metric('Total Active',     f'{total_active:,}')
-        m4.metric('Other / Not Live', f'{len(bdf) - total_active:,}')
-
-        st.markdown(' ')
-        st.dataframe(vc, use_container_width=False, hide_index=True)
-    else:
-        st.warning('Column I not found in the sheet.')
-
-    st.divider()
-
-    # ── REPORT 2: Status & Substatus Summary ──────────────────────────────────
-    section('Report 2 — Status & Substatus Summary')
+    # ── REPORT 1: Status & Substatus Summary ──────────────────────────────────
+    section('Report 1 — Status & Substatus Summary')
 
     status_cols    = [c for c in cols if 'status'    in c.lower()]
     substatus_cols = [c for c in cols if 'substatus' in c.lower()]
@@ -556,7 +530,7 @@ if page == '📋  Booking.com':
     st.divider()
 
     # ── REPORT 3: Hygiene Checks (col N → AH) ────────────────────────────────
-    section('Report 3 — Hygiene Checks (Col N to AH)')
+    section('Report 2 — Hygiene Checks (Col N to AH)')
 
     hyg_start = col_idx('N')
     hyg_end   = col_idx('AH') + 1
@@ -613,6 +587,94 @@ if page == '📋  Booking.com':
                                    key='dl_hyg_drill')
     else:
         st.warning('Columns N–AH not found.')
+
+    st.divider()
+
+    # ── REPORT 4: Properties missing from Tracker ─────────────────────────────
+    section('Report 3 — Live Properties vs Properties Tracker')
+
+    try:
+        available_tabs = fetch_bcom_tabs()
+    except Exception as e:
+        available_tabs = []
+        st.warning(f'Could not list sheet tabs: {e}')
+
+    # Let user pick the two tabs to compare
+    cfg1, cfg2 = st.columns(2)
+    with cfg1:
+        live_tab = st.selectbox(
+            'Live Properties tab',
+            available_tabs,
+            index=next((i for i, t in enumerate(available_tabs) if 'live' in t.lower()), 0),
+            key='bcom_live_tab',
+        )
+        live_id_col = st.selectbox('Property ID column in Live tab', ['A (col 1)', 'B (col 2)', 'C (col 3)', 'D (col 4)', 'E (col 5)'], key='live_id_col')
+    with cfg2:
+        tracker_tab = st.selectbox(
+            'Properties Tracker tab',
+            available_tabs,
+            index=next((i for i, t in enumerate(available_tabs) if 'tracker' in t.lower()), min(1, len(available_tabs)-1)),
+            key='bcom_tracker_tab',
+        )
+        tracker_id_col = st.selectbox('Property ID column in Tracker tab', ['A (col 1)', 'B (col 2)', 'C (col 3)', 'D (col 4)', 'E (col 5)'], key='tracker_id_col')
+
+    col_pos = {'A (col 1)': 0, 'B (col 2)': 1, 'C (col 3)': 2, 'D (col 4)': 3, 'E (col 5)': 4}
+
+    if st.button('🔍 Run Comparison', key='bcom_compare_btn', use_container_width=False):
+        try:
+            with st.spinner(f'Fetching "{live_tab}"…'):
+                live_df = fetch_bcom_tab(live_tab)
+            with st.spinner(f'Fetching "{tracker_tab}"…'):
+                tracker_df = fetch_bcom_tab(tracker_tab)
+
+            live_cols    = list(live_df.columns)
+            tracker_cols = list(tracker_df.columns)
+
+            live_id_idx    = col_pos[live_id_col]
+            tracker_id_idx = col_pos[tracker_id_col]
+
+            live_id_name    = live_cols[live_id_idx]    if live_id_idx    < len(live_cols)    else None
+            tracker_id_name = tracker_cols[tracker_id_idx] if tracker_id_idx < len(tracker_cols) else None
+
+            if not live_id_name or not tracker_id_name:
+                st.error('Selected ID column is out of range for one of the tabs.')
+            else:
+                live_ids    = set(live_df[live_id_name].str.strip().str.lower().replace('', pd.NA).dropna())
+                tracker_ids = set(tracker_df[tracker_id_name].str.strip().str.lower().replace('', pd.NA).dropna())
+
+                missing_ids = live_ids - tracker_ids
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric(f'Properties in "{live_tab}"',    f'{len(live_ids):,}')
+                c2.metric(f'Properties in "{tracker_tab}"', f'{len(tracker_ids):,}')
+                c3.metric('Missing from Tracker',           f'{len(missing_ids):,}',
+                          delta=f'-{len(missing_ids)}' if missing_ids else None,
+                          delta_color='inverse')
+
+                if missing_ids:
+                    st.markdown(' ')
+                    missing_df = live_df[
+                        live_df[live_id_name].str.strip().str.lower().isin(missing_ids)
+                    ].copy()
+                    st.error(f'**{len(missing_df):,} properties** are Live on Booking.com but missing from the Properties Tracker.')
+                    q_miss = st.text_input('Search missing', placeholder='Filter…',
+                                           key='miss_q', label_visibility='collapsed')
+                    if q_miss:
+                        mask = missing_df.apply(lambda r: r.astype(str).str.contains(q_miss, case=False, regex=False).any(), axis=1)
+                        missing_df = missing_df[mask]
+                    st.caption(f'{len(missing_df):,} row(s)')
+                    st.dataframe(missing_df, use_container_width=True, hide_index=True, height=400)
+                    buf = io.BytesIO()
+                    missing_df.to_excel(buf, index=False, engine='openpyxl')
+                    st.download_button('⬇️ Download Missing Properties', buf.getvalue(),
+                                       file_name='missing_from_tracker.xlsx',
+                                       mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                       key='dl_missing_tracker')
+                else:
+                    st.success('✅ All Live properties are present in the Properties Tracker.')
+
+        except Exception as e:
+            st.error(str(e))
 
     st.divider()
 
