@@ -87,12 +87,12 @@ def fetch_bcom() -> pd.DataFrame:
 # ── GoMMT ──────────────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_gommt_tabs() -> list[str]:
+def fetch_gommt_tabs():
     return [w.title for w in _gc().open_by_key(GOMMT_SHEET_ID).worksheets()]
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_gommt_tab(tab_name: str) -> pd.DataFrame:
+def fetch_gommt_tab(tab_name):
     gc = _gc()
     wb = gc.open_by_key(GOMMT_SHEET_ID)
     try:
@@ -104,7 +104,7 @@ def fetch_gommt_tab(tab_name: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_gommt() -> pd.DataFrame:
+def fetch_gommt():
     """Fetch GoMMT property data from the first tab of the GoMMT sheet."""
     ws = _gc().open_by_key(GOMMT_SHEET_ID).get_worksheet(0)
     return _rows_to_df(ws.get_all_values())
