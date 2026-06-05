@@ -757,11 +757,28 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                             )
 
                     if st.button('🔄 Re-run comparison', key=f'{prefix}_rerun_cmp', type='primary'):
-                        # Clear every cmp_key for this prefix so the new combo definitely re-fetches
+                        # Clear all cached comparison state for this channel
                         for k in list(st.session_state.keys()):
-                            if isinstance(k, str) and k.startswith(f'{prefix}_cmp_'):
+                            if isinstance(k, str) and (
+                                k.startswith(f'{prefix}_cmp_')
+                                or k in (
+                                    f'{prefix}_missing_ids',
+                                    f'{prefix}_live_ids',
+                                    f'{prefix}_tracker_ids',
+                                    f'{prefix}_live_df',
+                                    f'{prefix}_tracker_df',
+                                    f'{prefix}_live_id_col',
+                                    f'{prefix}_tracker_id_col',
+                                )
+                            ):
                                 st.session_state.pop(k, None)
-                        st.rerun()
+                        # Also clear the cached sheet fetch so a real reload happens
+                        try:
+                            fetch_tab_fn.clear()
+                        except Exception:
+                            pass
+                        # scope='app' forces full app rerun, not just the fragment
+                        st.rerun(scope='app')
 
                     # Quick peek of sample IDs to help the user pick correctly
                     _ld = st.session_state.get(f'{prefix}_live_df')
