@@ -444,13 +444,18 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
       'sub_status_letter': 'F',     # column letter for Sub Status
     }
     """
-    st.markdown(f'## {channel_name}')
-    st.caption(f'Live status, substatus summary and hygiene checks from the {channel_name} property sheet')
-    st.divider()
-
-    rc1, rc2 = st.columns([2, 6])
-    with rc1:
-        if st.button('🔄 Refresh Data', use_container_width=True, key=f'{prefix}_refresh'):
+    # ── Compact header: title left, refresh button right ─────────────────────
+    _h1, _h2 = st.columns([8, 1])
+    with _h1:
+        st.markdown(
+            f'<div style="display:flex;align-items:baseline;gap:10px;margin:0 0 2px">'
+            f'<div style="font-size:20px;font-weight:700;color:#0f172a;letter-spacing:-0.01em">{channel_name}</div>'
+            f'<div style="font-size:11px;color:#64748b">Status · Substatus · Hygiene</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with _h2:
+        if st.button('🔄 Refresh', use_container_width=True, key=f'{prefix}_refresh'):
             fetch_main.clear()
 
     try:
@@ -504,11 +509,27 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     bdf, blank_a_cnt, churn_cnt = _apply_exclusions(bdf, fh_idx, prefix, _fingerprint)
     cols = list(bdf.columns)
 
-    st.caption(
-        f'{len(bdf):,} active properties · {len(cols)} columns'
-        + (f' · {blank_a_cnt} blank Col A removed' if blank_a_cnt else '')
-        + (f' · {churn_cnt} churned (Col {fh_letter}) removed' if churn_cnt else '')
+    # ── Compact stats row (chip-style, Next.js feel) ─────────────────────────
+    _chips = (
+        f'<span style="background:#ecfdf5;color:#047857;font-size:11px;font-weight:600;'
+        f'padding:3px 9px;border-radius:6px;margin-right:6px">'
+        f'<b>{len(bdf):,}</b> active</span>'
+        f'<span style="background:#f1f5f9;color:#475569;font-size:11px;font-weight:500;'
+        f'padding:3px 9px;border-radius:6px;margin-right:6px">{len(cols)} cols</span>'
     )
+    if blank_a_cnt:
+        _chips += (
+            f'<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:500;'
+            f'padding:3px 9px;border-radius:6px;margin-right:6px">'
+            f'{blank_a_cnt:,} blank Col A</span>'
+        )
+    if churn_cnt:
+        _chips += (
+            f'<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:500;'
+            f'padding:3px 9px;border-radius:6px">'
+            f'{churn_cnt:,} churned (Col {fh_letter})</span>'
+        )
+    st.markdown(f'<div style="margin:-4px 0 10px">{_chips}</div>', unsafe_allow_html=True)
 
     # ── Pre-compute hygiene data (cached — runs once per data fetch) ─────────
     sub_idx = col_idx(cfg['sub_status_letter'])
