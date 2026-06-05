@@ -588,8 +588,15 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
             _user_tracker = st.session_state.get(f'{prefix}_tracker_tab')
 
             # User-selected ID column indices (default to col A = 0)
-            _user_live_idx    = st.session_state.get(f'{prefix}_live_id_idx', 0)
-            _user_tracker_idx = st.session_state.get(f'{prefix}_tracker_id_idx', 0)
+            # Defensive cast — older sessions might have stale non-int values
+            def _safe_int(v, default=0):
+                try:
+                    return int(v) if v is not None and v != '' else default
+                except (ValueError, TypeError):
+                    return default
+
+            _user_live_idx    = _safe_int(st.session_state.get(f'{prefix}_live_id_idx'))
+            _user_tracker_idx = _safe_int(st.session_state.get(f'{prefix}_tracker_id_idx'))
 
             # Auto-run comparison every time (no button needed)
             if available_tabs:
@@ -603,8 +610,12 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                             tracker_df = fetch_tab_fn(_tracker_tab)
                         _lc = list(live_df.columns)
                         _tc = list(tracker_df.columns)
-                        live_id_col    = _lc[_user_live_idx]    if _user_live_idx    < len(_lc) else _lc[0]
-                        tracker_id_col = _tc[_user_tracker_idx] if _user_tracker_idx < len(_tc) else _tc[0]
+                        if not _lc or not _tc:
+                            raise Exception('One of the tabs has no columns / is empty.')
+                        _li = max(0, min(int(_user_live_idx),    len(_lc) - 1))
+                        _ti = max(0, min(int(_user_tracker_idx), len(_tc) - 1))
+                        live_id_col    = _lc[_li]
+                        tracker_id_col = _tc[_ti]
                         live_ids    = set(live_df[live_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
                         tracker_ids = set(tracker_df[tracker_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
                         missing_ids = live_ids - tracker_ids
@@ -648,8 +659,10 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                     m3.metric('Missing', f'{len(missing_ids):,}')
 
             # ── Filters ───────────────────────────────────────────────────────
-            all_substatus = sorted(display_pivot['Sub Status'].dropna().unique().tolist())
-            all_status    = sorted(display_pivot['Status'].dropna().unique().tolist())
+            # Cast to str before sorting to avoid 'str < int' errors when sheet
+            # has mixed-type values in these columns.
+            all_substatus = sorted({str(v) for v in display_pivot['Sub Status'].dropna().tolist()})
+            all_status    = sorted({str(v) for v in display_pivot['Status'].dropna().tolist()})
 
             f1, f2, f3 = st.columns([3, 3, 2])
             with f1:
@@ -736,11 +749,15 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                         # ID column picker for Live tab (reads cached fetched df)
                         _live_cols = list(st.session_state.get(f'{prefix}_live_df', pd.DataFrame()).columns)
                         if _live_cols:
+                            _safe_live_idx = max(0, min(_safe_int(_user_live_idx), len(_live_cols)-1))
+                            # Clear stale value if present
+                            if not isinstance(st.session_state.get(f'{prefix}_live_id_idx'), int):
+                                st.session_state.pop(f'{prefix}_live_id_idx', None)
                             st.selectbox(
                                 'Live ID column',
                                 options=list(range(len(_live_cols))),
-                                format_func=lambda i: f'Col {chr(65 + i) if i < 26 else i+1}: {_live_cols[i][:30]}',
-                                index=min(_user_live_idx, len(_live_cols)-1),
+                                format_func=lambda i: f'Col {chr(65 + i) if i < 26 else i+1}: {str(_live_cols[i])[:30]}',
+                                index=_safe_live_idx,
                                 key=f'{prefix}_live_id_idx',
                             )
                     with tc2:
@@ -748,11 +765,14 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                             index=_tracker_default, key=f'{prefix}_tracker_tab')
                         _tracker_cols = list(st.session_state.get(f'{prefix}_tracker_df', pd.DataFrame()).columns)
                         if _tracker_cols:
+                            _safe_tracker_idx = max(0, min(_safe_int(_user_tracker_idx), len(_tracker_cols)-1))
+                            if not isinstance(st.session_state.get(f'{prefix}_tracker_id_idx'), int):
+                                st.session_state.pop(f'{prefix}_tracker_id_idx', None)
                             st.selectbox(
                                 'Tracker ID column',
                                 options=list(range(len(_tracker_cols))),
-                                format_func=lambda i: f'Col {chr(65 + i) if i < 26 else i+1}: {_tracker_cols[i][:30]}',
-                                index=min(_user_tracker_idx, len(_tracker_cols)-1),
+                                format_func=lambda i: f'Col {chr(65 + i) if i < 26 else i+1}: {str(_tracker_cols[i])[:30]}',
+                                index=_safe_tracker_idx,
                                 key=f'{prefix}_tracker_id_idx',
                             )
 
