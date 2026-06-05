@@ -435,7 +435,15 @@ if page == '🕐  Last Checked':
 # PAGE: CHANNEL (Booking.com / GoMMT)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_tab_fn):
+def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_tab_fn, cfg):
+    """
+    cfg = {
+      'fh_status_letter':  'I',     # column letter for FH Status (Churned filter)
+      'status_letter':     'E',     # column letter for the channel's main status
+      'status_label':      'BDC Live',  # display label
+      'sub_status_letter': 'F',     # column letter for Sub Status
+    }
+    """
     st.markdown(f'## {channel_name}')
     st.caption(f'Live status, substatus summary and hygiene checks from the {channel_name} property sheet')
     st.divider()
@@ -471,16 +479,16 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         return cols[i] if i < len(cols) else None
 
     # ── Exclusions (cached per channel via prefix) ───────────────────────────
-    # `cache_key` parameter ensures Booking.com and GoMMT have separate caches.
+    fh_letter = cfg['fh_status_letter']
+    fh_idx    = col_idx(fh_letter)
+
     @st.cache_data(ttl=3600, show_spinner=False)
-    def _apply_exclusions(_bdf, cache_key):
+    def _apply_exclusions(_bdf, fh_index, cache_key):
         cols_all = list(_bdf.columns)
         col_a = cols_all[0] if cols_all else None
         blank_mask = _bdf[col_a].str.strip() == '' if col_a else pd.Series(False, index=_bdf.index)
 
-        fh_col = next((c for c in cols_all if c.strip().lower() == 'fh status'), None)
-        if fh_col is None:
-            fh_col = next((c for c in cols_all if 'fh status' in c.strip().lower()), None)
+        fh_col = cols_all[fh_index] if fh_index is not None and fh_index < len(cols_all) else None
         churn_mask = (_bdf[fh_col].str.strip().str.lower() == 'churned'
                       if fh_col else pd.Series(False, index=_bdf.index))
 
@@ -489,17 +497,18 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         return filtered, int(blank_mask.sum()), int(churn_mask.sum())
 
     bdf_raw = bdf
-    bdf, blank_a_cnt, churn_cnt = _apply_exclusions(bdf, prefix)
+    bdf, blank_a_cnt, churn_cnt = _apply_exclusions(bdf, fh_idx, prefix)
     cols = list(bdf.columns)
 
     st.caption(
         f'{len(bdf):,} active properties · {len(cols)} columns'
         + (f' · {blank_a_cnt} blank Col A removed' if blank_a_cnt else '')
-        + (f' · {churn_cnt} churned (FH Status) removed' if churn_cnt else '')
+        + (f' · {churn_cnt} churned (Col {fh_letter}) removed' if churn_cnt else '')
     )
 
     # ── Pre-compute hygiene data (cached — runs once per data fetch) ─────────
-    sub_status_col_f = cols[5] if len(cols) > 5 else None
+    sub_idx = col_idx(cfg['sub_status_letter'])
+    sub_status_col_f = cols[sub_idx] if sub_idx < len(cols) else None
     hyg_start = col_idx('N')
     hyg_end   = col_idx('AH') + 1
     hyg_cols  = cols[hyg_start:hyg_end]
@@ -538,11 +547,11 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         _dup_sfx = tuple(f'.{i}' for i in range(1, 20))
         def _is_dup(c): return c.strip().lower().endswith(_dup_sfx)
 
-        substatus_col = next((c for c in cols if not _is_dup(c) and
-                              ('sub status' in c.lower() or 'substatus' in c.lower())), None)
-        status_col    = next((c for c in cols if c.strip().lower() == 'bdc live'), None)
-        if status_col is None and len(cols) > 4:
-            status_col = cols[4]
+        # Default to the channel-configured columns (positional)
+        _sub_idx = col_idx(cfg['sub_status_letter'])
+        _sta_idx = col_idx(cfg['status_letter'])
+        substatus_col = cols[_sub_idx] if _sub_idx < len(cols) else None
+        status_col    = cols[_sta_idx] if _sta_idx < len(cols) else None
 
         with st.expander('⚙️ Column configuration', expanded=(substatus_col is None or status_col is None)):
             cc1, cc2 = st.columns(2)
@@ -574,10 +583,14 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
             _live_default    = next((i for i, t in enumerate(available_tabs) if 'live'    in t.lower()), 0)
             _tracker_default = next((i for i, t in enumerate(available_tabs) if 'tracker' in t.lower()), min(1, len(available_tabs)-1))
 
+            # User-selected tabs override auto-detected defaults
+            _user_live    = st.session_state.get(f'{prefix}_live_tab')
+            _user_tracker = st.session_state.get(f'{prefix}_tracker_tab')
+
             # Auto-run comparison every time (no button needed)
             if available_tabs:
-                _live_tab    = available_tabs[_live_default]
-                _tracker_tab = available_tabs[_tracker_default]
+                _live_tab    = _user_live    if _user_live    in available_tabs else available_tabs[_live_default]
+                _tracker_tab = _user_tracker if _user_tracker in available_tabs else available_tabs[_tracker_default]
                 _cmp_key     = f'{prefix}_cmp_{_live_tab}_{_tracker_tab}'
                 if _cmp_key not in st.session_state:
                     try:
@@ -638,7 +651,7 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                 )
             with f2:
                 sel_sta = st.multiselect(
-                    'Filter BDC Live', all_status, default=[],
+                    f"Filter {cfg['status_label']}", all_status, default=[],
                     placeholder='All statuses', key=f'{prefix}_piv_sta_filter',
                 )
             with f3:
@@ -1121,12 +1134,26 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         with bcom_tab4: st.error(f'Matrix tab error: {_e}')
 
 
+# ── Channel column configs ────────────────────────────────────────────────────
+_BCOM_CFG = {
+    'fh_status_letter':  'I',
+    'status_letter':     'E',
+    'status_label':      'BDC Live',
+    'sub_status_letter': 'F',
+}
+_GOMMT_CFG = {
+    'fh_status_letter':  'N',
+    'status_letter':     'O',
+    'status_label':      'MMT',
+    'sub_status_letter': 'P',
+}
+
 # ── Dispatch to channel page ──────────────────────────────────────────────────
 if page == '📋  Booking.com':
-    _render_channel_page('Booking.com', 'bcom', fetch_bcom, fetch_bcom_tabs, fetch_bcom_tab)
+    _render_channel_page('Booking.com', 'bcom', fetch_bcom, fetch_bcom_tabs, fetch_bcom_tab, _BCOM_CFG)
     st.stop()
 elif page == '📘  GoMMT':
-    _render_channel_page('GoMMT', 'gommt', fetch_gommt, fetch_gommt_tabs, fetch_gommt_tab)
+    _render_channel_page('GoMMT', 'gommt', fetch_gommt, fetch_gommt_tabs, fetch_gommt_tab, _GOMMT_CFG)
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
