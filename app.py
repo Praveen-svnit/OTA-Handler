@@ -464,31 +464,26 @@ if page == '📋  Booking.com':
         cols = list(bdf.columns)
         return cols[i] if i < len(cols) else None
 
-    # ── Exclusions ────────────────────────────────────────────────────────────
-    bdf_raw = bdf.copy()   # keep untouched for raw view
-    cols_all = list(bdf.columns)
+    # ── Exclusions (cached — recomputed only when sheet data changes) ────────
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _apply_exclusions(_bdf):
+        cols_all = list(_bdf.columns)
+        col_a = cols_all[0] if cols_all else None
+        blank_mask = _bdf[col_a].str.strip() == '' if col_a else pd.Series(False, index=_bdf.index)
 
-    # 1. Drop rows where col A (index 0) is blank
-    col_a = cols_all[0] if cols_all else None
-    blank_a_mask = bdf[col_a].str.strip() == '' if col_a else pd.Series(False, index=bdf.index)
+        fh_col = next((c for c in cols_all if c.strip().lower() == 'fh status'), None)
+        if fh_col is None:
+            fh_col = next((c for c in cols_all if 'fh status' in c.strip().lower()), None)
+        churn_mask = (_bdf[fh_col].str.strip().str.lower() == 'churned'
+                      if fh_col else pd.Series(False, index=_bdf.index))
 
-    # 2. Drop rows where "FH Status" column value is "churned"
-    fh_status_col = next((c for c in cols_all if c.strip().lower() == 'fh status'), None)
-    if fh_status_col is None:
-        # fallback: find column containing "fh status"
-        fh_status_col = next((c for c in cols_all if 'fh status' in c.strip().lower()), None)
+        excl = blank_mask | churn_mask
+        filtered = _bdf[~excl].reset_index(drop=True)
+        return filtered, int(blank_mask.sum()), int(churn_mask.sum())
 
-    churned_mask = (
-        bdf[fh_status_col].str.strip().str.lower() == 'churned'
-        if fh_status_col else pd.Series(False, index=bdf.index)
-    )
-
-    exclude_mask = blank_a_mask | churned_mask
-    bdf          = bdf[~exclude_mask].reset_index(drop=True)
-    cols         = list(bdf.columns)
-
-    blank_a_cnt  = int(blank_a_mask.sum())
-    churn_cnt    = int(churned_mask.sum())
+    bdf_raw = bdf
+    bdf, blank_a_cnt, churn_cnt = _apply_exclusions(bdf)
+    cols = list(bdf.columns)
 
     st.caption(
         f'{len(bdf):,} active properties · {len(cols)} columns'
@@ -496,36 +491,40 @@ if page == '📋  Booking.com':
         + (f' · {churn_cnt} churned (FH Status) removed' if churn_cnt else '')
     )
 
-    # ── Pre-compute hygiene data (shared across tab2 + tab3) ─────────────────
-    # Filter to Sub Status = "Live" only (col F, index 5)
+    # ── Pre-compute hygiene data (cached — runs once per data fetch) ─────────
     sub_status_col_f = cols[5] if len(cols) > 5 else None
-    if sub_status_col_f is not None:
-        bdf_hyg = bdf[bdf[sub_status_col_f].str.strip().str.lower() == 'live'].reset_index(drop=True)
-    else:
-        bdf_hyg = bdf
-
     hyg_start = col_idx('N')
     hyg_end   = col_idx('AH') + 1
     hyg_cols  = cols[hyg_start:hyg_end]
-    hyg_df    = bdf_hyg[hyg_cols].copy() if hyg_cols else pd.DataFrame()
 
-    # ── Performance: pre-strip all hygiene columns once ──────────────────────
-    # Avoids re-running .str.strip() on every rerun / click
-    if not hyg_df.empty:
-        stripped = {hc: bdf_hyg[hc].astype(str).str.strip() for hc in hyg_cols}
-        # Pre-compute value_counts for each hygiene column (used by both tabs)
-        hyg_vcounts = {hc: stripped[hc].value_counts(dropna=False) for hc in hyg_cols}
-        # Pre-compute filled counts (used in summaries)
-        hyg_filled  = {hc: int(stripped[hc].ne('').sum()) for hc in hyg_cols}
-    else:
-        stripped, hyg_vcounts, hyg_filled = {}, {}, {}
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _build_hyg_data(_bdf, sub_col, h_cols):
+        if sub_col is not None:
+            _hyg = _bdf[_bdf[sub_col].str.strip().str.lower() == 'live'].reset_index(drop=True)
+        else:
+            _hyg = _bdf
+        if not h_cols:
+            return _hyg, {}, {}, {}
+        _stripped = {hc: _hyg[hc].astype(str).str.strip() for hc in h_cols}
+        _vcounts  = {hc: _stripped[hc].value_counts(dropna=False) for hc in h_cols}
+        _filled   = {hc: int(_stripped[hc].ne('').sum()) for hc in h_cols}
+        return _hyg, _stripped, _vcounts, _filled
+
+    bdf_hyg, stripped, hyg_vcounts, hyg_filled = _build_hyg_data(bdf, sub_status_col_f, hyg_cols)
+    hyg_df = bdf_hyg[hyg_cols] if hyg_cols else pd.DataFrame()
 
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
     bcom_tab1, bcom_tab2, bcom_tab3, bcom_tab4 = st.tabs(
         ['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries', '🗂 E-F-L-M Matrix']
     )
 
-    with bcom_tab1:
+    # Each tab is wrapped in @st.fragment so a click inside one tab does NOT
+    # rerun the other three (10× faster click response).
+    # The fragment decorator on a closure means the entire body skips re-execution
+    # when no Streamlit widget *inside* that fragment changed.
+
+    @st.fragment
+    def _render_tab1():
         section('Status & Substatus Summary')
 
         # Detect columns — prefer exact names, exclude .N duplicates
@@ -740,7 +739,8 @@ if page == '📋  Booking.com':
                                key='dl_bcom_raw')
 
     # ── TAB 2: Hygiene Checks ─────────────────────────────────────────────────
-    with bcom_tab2:
+    @st.fragment
+    def _render_tab2():
         if sub_status_col_f:
             st.info(f'Filtered to **{sub_status_col_f} = Live** · {len(bdf_hyg):,} properties (of {len(bdf):,} total)')
         if hyg_df.empty:
@@ -782,7 +782,8 @@ if page == '📋  Booking.com':
             st.dataframe(styled, use_container_width=True, hide_index=True, height=560)
 
     # ── TAB 3: Value Summaries ────────────────────────────────────────────────
-    with bcom_tab3:
+    @st.fragment
+    def _render_tab3():
         if sub_status_col_f:
             st.info(f'Filtered to **{sub_status_col_f} = Live** · {len(bdf_hyg):,} properties (of {len(bdf):,} total)')
         if hyg_df.empty:
@@ -938,7 +939,8 @@ if page == '📋  Booking.com':
                                              hide_index=True, height=320)
 
     # ── TAB 4: E-F-L-M Matrix (excludes ColI = churned) ───────────────────────
-    with bcom_tab4:
+    @st.fragment
+    def _render_tab4():
         col_e = cols[4]  if len(cols) > 4  else None
         col_f = cols[5]  if len(cols) > 5  else None
         col_i = cols[8]  if len(cols) > 8  else None
@@ -1064,6 +1066,12 @@ if page == '📋  Booking.com':
                 mime='text/csv',
                 key='dl_mx_full',
             )
+
+    # ── Mount each fragment into its tab ──────────────────────────────────────
+    with bcom_tab1: _render_tab1()
+    with bcom_tab2: _render_tab2()
+    with bcom_tab3: _render_tab3()
+    with bcom_tab4: _render_tab4()
 
     st.stop()
 
