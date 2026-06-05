@@ -515,12 +515,45 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     sub_status_col_f = cols[sub_idx] if sub_idx < len(cols) else None
     hyg_start = col_idx('N')
     hyg_end   = col_idx('AH') + 1
-    hyg_cols  = cols[hyg_start:hyg_end]
+    base_hyg_cols = cols[hyg_start:hyg_end]
 
     # Channel-specific exclusion list (e.g., status/category cols mixed in N-AH range)
     _hyg_exclude = {e.strip().lower() for e in cfg.get('hyg_exclude', []) if e}
     if _hyg_exclude:
-        hyg_cols = [c for c in hyg_cols if c.strip().lower() not in _hyg_exclude]
+        base_hyg_cols = [c for c in base_hyg_cols if c.strip().lower() not in _hyg_exclude]
+
+    # ── User customization: add extra columns / remove default ones ──────────
+    with st.expander('⚙️ Customize hygiene check columns', expanded=False):
+        cc1, cc2 = st.columns(2)
+
+        # Columns not in the default range — user can opt them in
+        _addable = [c for c in cols if c not in base_hyg_cols]
+        with cc1:
+            added = st.multiselect(
+                '➕ Add columns to Hygiene/Value Summary',
+                options=_addable,
+                default=st.session_state.get(f'{prefix}_hyg_add', []),
+                placeholder='Pick any column outside the N–AH range…',
+                key=f'{prefix}_hyg_add',
+            )
+
+        # Columns in the default range — user can opt out
+        with cc2:
+            removed = st.multiselect(
+                '➖ Remove columns from default range',
+                options=base_hyg_cols,
+                default=st.session_state.get(f'{prefix}_hyg_remove', []),
+                placeholder='Pick default columns to hide…',
+                key=f'{prefix}_hyg_remove',
+            )
+
+        st.caption('Selections persist in your session and apply to both Hygiene Checks and Value Summaries.')
+
+    # Apply user additions + removals
+    hyg_cols = [c for c in base_hyg_cols if c not in set(removed)]
+    for c in added:
+        if c not in hyg_cols:
+            hyg_cols.append(c)
 
     # Fingerprint for the post-exclusion DataFrame — invalidates this layer
     # whenever the underlying data changes (new col, new row, etc.).
