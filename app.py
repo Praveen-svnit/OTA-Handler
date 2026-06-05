@@ -776,7 +776,10 @@ if page == '📋  Booking.com':
                 return None
 
             prop_id_col  = _find_col('property id', 'property_id', 'prop id', 'fh id')
-            bdc_id_col   = _find_col('bdc id', 'booking id', 'bdc_id')
+            # BDC ID = col D (index 3), fall back to name match
+            bdc_id_col   = cols[3] if len(cols) > 3 else None
+            if bdc_id_col is None or 'id' not in bdc_id_col.lower():
+                bdc_id_col = _find_col('booking.com id', 'bdc id', 'booking id', 'bdc_id') or (cols[3] if len(cols) > 3 else None)
             prop_name_col = _find_col('property name', 'hotel name', 'prop name')
 
             for hc in hyg_cols:
