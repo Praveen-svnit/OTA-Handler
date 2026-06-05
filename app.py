@@ -470,9 +470,10 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         cols = list(bdf.columns)
         return cols[i] if i < len(cols) else None
 
-    # ── Exclusions (cached — recomputed only when sheet data changes) ────────
+    # ── Exclusions (cached per channel via prefix) ───────────────────────────
+    # `cache_key` parameter ensures Booking.com and GoMMT have separate caches.
     @st.cache_data(ttl=3600, show_spinner=False)
-    def _apply_exclusions(_bdf):
+    def _apply_exclusions(_bdf, cache_key):
         cols_all = list(_bdf.columns)
         col_a = cols_all[0] if cols_all else None
         blank_mask = _bdf[col_a].str.strip() == '' if col_a else pd.Series(False, index=_bdf.index)
@@ -488,7 +489,7 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         return filtered, int(blank_mask.sum()), int(churn_mask.sum())
 
     bdf_raw = bdf
-    bdf, blank_a_cnt, churn_cnt = _apply_exclusions(bdf)
+    bdf, blank_a_cnt, churn_cnt = _apply_exclusions(bdf, prefix)
     cols = list(bdf.columns)
 
     st.caption(
@@ -504,7 +505,7 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     hyg_cols  = cols[hyg_start:hyg_end]
 
     @st.cache_data(ttl=3600, show_spinner=False)
-    def _build_hyg_data(_bdf, sub_col, h_cols):
+    def _build_hyg_data(_bdf, sub_col, h_cols, cache_key):
         if sub_col is not None:
             _hyg = _bdf[_bdf[sub_col].str.strip().str.lower() == 'live'].reset_index(drop=True)
         else:
@@ -516,7 +517,7 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         _filled   = {hc: int(_stripped[hc].ne('').sum()) for hc in h_cols}
         return _hyg, _stripped, _vcounts, _filled
 
-    bdf_hyg, stripped, hyg_vcounts, hyg_filled = _build_hyg_data(bdf, sub_status_col_f, hyg_cols)
+    bdf_hyg, stripped, hyg_vcounts, hyg_filled = _build_hyg_data(bdf, sub_status_col_f, hyg_cols, prefix)
     hyg_df = bdf_hyg[hyg_cols] if hyg_cols else pd.DataFrame()
 
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
