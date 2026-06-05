@@ -6,6 +6,7 @@ from datetime import datetime
 
 CRS_SHEET_ID   = '1H2lP2zn4Ydeyex504DzmfBwXAX0Ip2H4SIu92DylRLw'
 BCOM_SHEET_ID  = '1vjm8BX1QZKMqXiLjbokCD0R91JvlscXcg5812p_IolI'
+GOMMT_SHEET_ID = '1Pr2iEC7UvI7sWgwx4qQGQcO9Iw3dyzBqLpAr2mrQvKc'
 CRS_SHEET_TAB  = 'CRS DATA'
 DASH_SHEET_ID  = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU'
 DASH_SHEET_TAB = 'Prop Level Dashboard'
@@ -80,6 +81,32 @@ def fetch_bcom_tab(tab_name: str) -> pd.DataFrame:
 def fetch_bcom() -> pd.DataFrame:
     """Fetch Booking.com property data from the first tab of the BCOM sheet."""
     ws = _gc().open_by_key(BCOM_SHEET_ID).get_worksheet(0)
+    return _rows_to_df(ws.get_all_values())
+
+
+# ── GoMMT ──────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_gommt_tabs() -> list[str]:
+    return [w.title for w in _gc().open_by_key(GOMMT_SHEET_ID).worksheets()]
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_gommt_tab(tab_name: str) -> pd.DataFrame:
+    gc = _gc()
+    wb = gc.open_by_key(GOMMT_SHEET_ID)
+    try:
+        ws = wb.worksheet(tab_name)
+    except gspread.exceptions.WorksheetNotFound:
+        available = [w.title for w in wb.worksheets()]
+        raise Exception(f"Tab '{tab_name}' not found in GoMMT sheet. Available: {available}")
+    return _rows_to_df(ws.get_all_values())
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_gommt() -> pd.DataFrame:
+    """Fetch GoMMT property data from the first tab of the GoMMT sheet."""
+    ws = _gc().open_by_key(GOMMT_SHEET_ID).get_worksheet(0)
     return _rows_to_df(ws.get_all_values())
 
 

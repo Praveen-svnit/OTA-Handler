@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 import json, ast, re, io
 
-from sheets import fetch_crs, fetch_dashboard, save_run, fetch_log, fetch_details, fetch_bcom, fetch_bcom_tab, fetch_bcom_tabs
+from sheets import (
+    fetch_crs, fetch_dashboard, save_run, fetch_log, fetch_details,
+    fetch_bcom, fetch_bcom_tab, fetch_bcom_tabs,
+    fetch_gommt, fetch_gommt_tab, fetch_gommt_tabs,
+)
 
 st.set_page_config(page_title="SU Mapping Checker", layout="wide", page_icon="🔍",
                    initial_sidebar_state="expanded")
@@ -373,7 +377,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     page = st.radio('nav',
-                    ['📋  Booking.com', '📊  Mapping Checker', '🕐  Last Checked'],
+                    ['📋  Booking.com', '📘  GoMMT', '📊  Mapping Checker', '🕐  Last Checked'],
                     label_visibility='collapsed')
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -428,25 +432,26 @@ if page == '🕐  Last Checked':
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE: BOOKING.COM
+# PAGE: CHANNEL (Booking.com / GoMMT)
 # ══════════════════════════════════════════════════════════════════════════════
-if page == '📋  Booking.com':
-    st.markdown('## Booking.com')
-    st.caption('Live status, substatus summary and hygiene checks from the Booking.com property sheet')
+
+def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_tab_fn):
+    st.markdown(f'## {channel_name}')
+    st.caption(f'Live status, substatus summary and hygiene checks from the {channel_name} property sheet')
     st.divider()
 
     rc1, rc2 = st.columns([2, 6])
     with rc1:
-        if st.button('🔄 Refresh Data', use_container_width=True):
-            fetch_bcom.clear()
+        if st.button('🔄 Refresh Data', use_container_width=True, key=f'{prefix}_refresh'):
+            fetch_main.clear()
 
     try:
-        with st.spinner('Loading Booking.com sheet…'):
-            bdf = fetch_bcom()
+        with st.spinner(f'Loading {channel_name} sheet…'):
+            bdf = fetch_main()
     except Exception as e:
         st.error(f'Could not load sheet: {e}')
-        st.info('Make sure the service account has been given Viewer access to the Booking.com sheet.')
-        st.stop()
+        st.info(f'Make sure the service account has been given Viewer access to the {channel_name} sheet.')
+        return
 
     if bdf.empty:
         st.warning('Sheet returned no data.')
@@ -543,11 +548,11 @@ if page == '📋  Booking.com':
             with cc1:
                 substatus_col = st.selectbox('Sub Status column', [None] + cols,
                     index=([None] + cols).index(substatus_col) if substatus_col in cols else 0,
-                    key='bcom_sub_col')
+                    key=f'{prefix}_sub_col')
             with cc2:
                 status_col = st.selectbox('Status column', [None] + cols,
                     index=([None] + cols).index(status_col) if status_col in cols else 0,
-                    key='bcom_stat_col')
+                    key=f'{prefix}_stat_col')
             if not substatus_col and not status_col:
                 st.caption('Columns: ' + ' · '.join(cols[:20]) + (' …' if len(cols) > 20 else ''))
 
@@ -561,7 +566,7 @@ if page == '📋  Booking.com':
 
             # ── Auto-fetch tracker comparison ─────────────────────────────────
             try:
-                available_tabs = fetch_bcom_tabs()
+                available_tabs = fetch_tabs_fn()
             except Exception:
                 available_tabs = []
 
@@ -572,32 +577,32 @@ if page == '📋  Booking.com':
             if available_tabs:
                 _live_tab    = available_tabs[_live_default]
                 _tracker_tab = available_tabs[_tracker_default]
-                _cmp_key     = f'bcom_cmp_{_live_tab}_{_tracker_tab}'
+                _cmp_key     = f'{prefix}_cmp_{_live_tab}_{_tracker_tab}'
                 if _cmp_key not in st.session_state:
                     try:
                         with st.spinner('Fetching tracker comparison…'):
-                            live_df    = fetch_bcom_tab(_live_tab)
-                            tracker_df = fetch_bcom_tab(_tracker_tab)
+                            live_df    = fetch_tab_fn(_live_tab)
+                            tracker_df = fetch_tab_fn(_tracker_tab)
                         live_id_col    = list(live_df.columns)[0]
                         tracker_id_col = list(tracker_df.columns)[0]
                         live_ids    = set(live_df[live_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
                         tracker_ids = set(tracker_df[tracker_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
                         missing_ids = live_ids - tracker_ids
                         st.session_state[_cmp_key]               = True
-                        st.session_state['bcom_missing_ids']     = missing_ids
-                        st.session_state['bcom_live_ids']        = live_ids
-                        st.session_state['bcom_tracker_ids']     = tracker_ids
-                        st.session_state['bcom_live_df']         = live_df
-                        st.session_state['bcom_live_id_col']     = live_id_col
-                        st.session_state['bcom_live_tab_used']   = _live_tab
-                        st.session_state['bcom_tracker_tab_used'] = _tracker_tab
+                        st.session_state[f'{prefix}_missing_ids']     = missing_ids
+                        st.session_state[f'{prefix}_live_ids']        = live_ids
+                        st.session_state[f'{prefix}_tracker_ids']     = tracker_ids
+                        st.session_state[f'{prefix}_live_df']         = live_df
+                        st.session_state[f'{prefix}_live_id_col']     = live_id_col
+                        st.session_state[f'{prefix}_live_tab_used']   = _live_tab
+                        st.session_state[f'{prefix}_tracker_tab_used'] = _tracker_tab
                     except Exception as e:
                         st.session_state[_cmp_key] = False
                         st.warning(f'Tracker comparison failed: {e}')
 
-            missing_ids   = st.session_state.get('bcom_missing_ids')
-            live_df_s     = st.session_state.get('bcom_live_df')
-            live_id_col_s = st.session_state.get('bcom_live_id_col')
+            missing_ids   = st.session_state.get(f'{prefix}_missing_ids')
+            live_df_s     = st.session_state.get(f'{prefix}_live_df')
+            live_id_col_s = st.session_state.get(f'{prefix}_live_id_col')
 
             display_pivot = pivot.copy()
             if missing_ids is not None and live_df_s is not None:
@@ -613,8 +618,8 @@ if page == '📋  Booking.com':
                     display_pivot = display_pivot.merge(miss_grp, on=['Sub Status', 'Status'], how='left')
                     display_pivot['Missing from Tracker'] = display_pivot['Missing from Tracker'].fillna(0).astype(int)
                 else:
-                    _li = st.session_state.get('bcom_live_ids', set())
-                    _ti = st.session_state.get('bcom_tracker_ids', set())
+                    _li = st.session_state.get(f'{prefix}_live_ids', set())
+                    _ti = st.session_state.get(f'{prefix}_tracker_ids', set())
                     m1, m2, m3 = st.columns(3)
                     m1.metric('Live', f'{len(_li):,}')
                     m2.metric('In Tracker', f'{len(_ti):,}')
@@ -628,16 +633,16 @@ if page == '📋  Booking.com':
             with f1:
                 sel_sub = st.multiselect(
                     'Filter Sub Status', all_substatus, default=[],
-                    placeholder='All sub-statuses', key='piv_sub_filter',
+                    placeholder='All sub-statuses', key=f'{prefix}_piv_sub_filter',
                 )
             with f2:
                 sel_sta = st.multiselect(
                     'Filter BDC Live', all_status, default=[],
-                    placeholder='All statuses', key='piv_sta_filter',
+                    placeholder='All statuses', key=f'{prefix}_piv_sta_filter',
                 )
             with f3:
                 st.markdown(' ')
-                show_zero = st.checkbox('Hide zero counts', value=True, key='piv_hide_zero')
+                show_zero = st.checkbox('Hide zero counts', value=True, key=f'{prefix}_piv_hide_zero')
 
             # Apply filters
             view_pivot = display_pivot.copy()
@@ -674,8 +679,8 @@ if page == '📋  Booking.com':
                 return styles
 
             # Caption
-            _live_used    = st.session_state.get('bcom_live_tab_used', '?')
-            _tracker_used = st.session_state.get('bcom_tracker_tab_used', '?')
+            _live_used    = st.session_state.get(f'{prefix}_live_tab_used', '?')
+            _tracker_used = st.session_state.get(f'{prefix}_tracker_tab_used', '?')
             st.caption(
                 f'**{substatus_col}** × **{status_col}** · '
                 f'{len(view_pivot)-1:,} groups · {int(view_pivot["Count"].iloc[:-1].sum()):,} properties'
@@ -693,19 +698,19 @@ if page == '📋  Booking.com':
                     tc1, tc2 = st.columns(2)
                     with tc1:
                         new_live = st.selectbox('Live Properties tab', available_tabs,
-                            index=_live_default, key='bcom_live_tab')
+                            index=_live_default, key=f'{prefix}_live_tab')
                     with tc2:
                         new_tracker = st.selectbox('Properties Tracker tab', available_tabs,
-                            index=_tracker_default, key='bcom_tracker_tab')
-                    if st.button('🔄 Re-run comparison with these tabs', key='bcom_rerun_cmp'):
-                        _new_key = f'bcom_cmp_{new_live}_{new_tracker}'
+                            index=_tracker_default, key=f'{prefix}_tracker_tab')
+                    if st.button('🔄 Re-run comparison with these tabs', key=f'{prefix}_rerun_cmp'):
+                        _new_key = f'{prefix}_cmp_{new_live}_{new_tracker}'
                         st.session_state.pop(_new_key, None)
                         st.rerun()
 
             if missing_ids:
                 missing_df = live_df_s[live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)].copy()
                 with st.expander(f'⚠️ {len(missing_df):,} properties missing from Tracker', expanded=False):
-                    qm = st.text_input('Search', placeholder='Filter…', key='miss_q', label_visibility='collapsed')
+                    qm = st.text_input('Search', placeholder='Filter…', key=f'{prefix}_miss_q', label_visibility='collapsed')
                     if qm:
                         mask = missing_df.apply(lambda r: r.astype(str).str.contains(qm, case=False, regex=False).any(), axis=1)
                         missing_df = missing_df[mask]
@@ -716,7 +721,7 @@ if page == '📋  Booking.com':
                     st.download_button('⬇️ Download Missing', buf.getvalue(),
                                        file_name='missing_from_tracker.xlsx',
                                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                       key='dl_missing_tracker')
+                                       key=f'dl_{prefix}_missing_tracker')
             elif missing_ids is not None:
                 st.success('✅ All Live properties are in the Tracker.')
         else:
@@ -724,7 +729,7 @@ if page == '📋  Booking.com':
 
         st.divider()
         with st.expander('📄 Raw Data (incl. churn)', expanded=False):
-            q = st.text_input('Search', placeholder='Filter rows…', key='bcom_raw_q',
+            q = st.text_input('Search', placeholder='Filter rows…', key=f'{prefix}_raw_q',
                               label_visibility='collapsed')
             view = bdf_raw.copy()
             if q:
@@ -735,9 +740,9 @@ if page == '📋  Booking.com':
             buf = io.BytesIO()
             bdf_raw.to_excel(buf, index=False, engine='openpyxl')
             st.download_button('⬇️ Download full sheet', buf.getvalue(),
-                               file_name='bcom_data.xlsx',
+                               file_name=f'{prefix}_data.xlsx',
                                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                               key='dl_bcom_raw')
+                               key=f'dl_{prefix}_raw')
 
     # ── TAB 2: Hygiene Checks ─────────────────────────────────────────────────
     @st.fragment
@@ -847,7 +852,7 @@ if page == '📋  Booking.com':
                                 hide_index=True,
                                 selection_mode='single-row',
                                 on_select='rerun',
-                                key=f'sel_link_{hc}',
+                                key=f'{prefix}_sel_link_{hc}',
                             )
                             rows_sel = sel.selection.rows if hasattr(sel, 'selection') else []
                             if rows_sel:
@@ -890,7 +895,7 @@ if page == '📋  Booking.com':
                                     detail.to_csv(index=False).encode('utf-8'),
                                     file_name=f'{chosen}_link_{hc[:20]}.csv',
                                     mime='text/csv',
-                                    key=f'dl_link_{hc[:20]}',
+                                    key=f'dl_{prefix}_link_{hc[:20]}',
                                 )
                     else:
                         # ── Default: clickable value counts (using cached vcounts) ─
@@ -909,7 +914,7 @@ if page == '📋  Booking.com':
                                 hide_index=True,
                                 selection_mode='single-row',
                                 on_select='rerun',
-                                key=f'sel_val_{hc}',
+                                key=f'{prefix}_sel_val_{hc}',
                             )
                             rows_sel = sel.selection.rows if hasattr(sel, 'selection') else []
                             if rows_sel:
@@ -976,19 +981,19 @@ if page == '📋  Booking.com':
             f1, f2, f3, f4, f5 = st.columns([2, 2, 2, 2, 1])
             with f1:
                 sel_e = st.multiselect(col_e, sorted(matrix[col_e].dropna().unique().tolist()),
-                                       placeholder=f'All {col_e}', key='mx_e')
+                                       placeholder=f'All {col_e}', key=f'{prefix}_mx_e')
             with f2:
                 sel_f = st.multiselect(col_f, sorted(matrix[col_f].dropna().unique().tolist()),
-                                       placeholder=f'All {col_f}', key='mx_f')
+                                       placeholder=f'All {col_f}', key=f'{prefix}_mx_f')
             with f3:
                 sel_l = st.multiselect(col_l, sorted(matrix[col_l].dropna().unique().tolist()),
-                                       placeholder=f'All {col_l}', key='mx_l')
+                                       placeholder=f'All {col_l}', key=f'{prefix}_mx_l')
             with f4:
                 sel_m = st.multiselect(col_m, sorted(matrix[col_m].dropna().unique().tolist()),
-                                       placeholder=f'All {col_m}', key='mx_m')
+                                       placeholder=f'All {col_m}', key=f'{prefix}_mx_m')
             with f5:
                 st.markdown(' ')
-                hide_zero_mx = st.checkbox('Hide zero', value=True, key='mx_hide_zero')
+                hide_zero_mx = st.checkbox('Hide zero', value=True, key=f'{prefix}_mx_hide_zero')
 
             view = matrix.copy()
             if sel_e: view = view[view[col_e].isin(sel_e)]
@@ -1018,7 +1023,7 @@ if page == '📋  Booking.com':
                 height=min(60 + len(view_display) * 35, 520),
                 selection_mode='single-row',
                 on_select='rerun',
-                key='mx_table_sel',
+                key=f'{prefix}_mx_table_sel',
             )
 
             # Drill-down: click a row → show matching properties
@@ -1029,7 +1034,7 @@ if page == '📋  Booking.com':
                 view.to_csv(index=False).encode('utf-8'),
                 file_name='efmlm_matrix.csv',
                 mime='text/csv',
-                key='dl_mx_full',
+                key=f'dl_{prefix}_mx_full',
             )
 
             # ── Property View (drill-down) at the bottom ──────────────────────
@@ -1072,7 +1077,7 @@ if page == '📋  Booking.com':
                 # Search inside the property view
                 q_drill = st.text_input(
                     'Search', placeholder='Filter properties by ID, name…',
-                    key='mx_drill_q', label_visibility='collapsed',
+                    key=f'{prefix}_mx_drill_q', label_visibility='collapsed',
                 )
                 if q_drill:
                     mask_q = detail.apply(
@@ -1086,7 +1091,7 @@ if page == '📋  Booking.com':
                     detail.to_csv(index=False).encode('utf-8'),
                     file_name='efmlm_matrix_drill.csv',
                     mime='text/csv',
-                    key='dl_mx_drill',
+                    key=f'dl_{prefix}_mx_drill',
                 )
             else:
                 st.markdown(
@@ -1096,7 +1101,7 @@ if page == '📋  Booking.com':
                     unsafe_allow_html=True,
                 )
 
-    # ── Mount each fragment into its tab (guarded so st.stop() always runs) ──
+    # ── Mount each fragment into its tab (guarded so render is robust) ───────
     try:
         with bcom_tab1: _render_tab1()
     except Exception as _e:
@@ -1114,6 +1119,13 @@ if page == '📋  Booking.com':
     except Exception as _e:
         with bcom_tab4: st.error(f'Matrix tab error: {_e}')
 
+
+# ── Dispatch to channel page ──────────────────────────────────────────────────
+if page == '📋  Booking.com':
+    _render_channel_page('Booking.com', 'bcom', fetch_bcom, fetch_bcom_tabs, fetch_bcom_tab)
+    st.stop()
+elif page == '📘  GoMMT':
+    _render_channel_page('GoMMT', 'gommt', fetch_gommt, fetch_gommt_tabs, fetch_gommt_tab)
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
