@@ -521,7 +521,9 @@ if page == '📋  Booking.com':
         stripped, hyg_vcounts, hyg_filled = {}, {}, {}
 
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
-    bcom_tab1, bcom_tab2, bcom_tab3 = st.tabs(['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries'])
+    bcom_tab1, bcom_tab2, bcom_tab3, bcom_tab4 = st.tabs(
+        ['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries', '🗂 E-F-L-M Matrix']
+    )
 
     with bcom_tab1:
         section('Status & Substatus Summary')
@@ -934,6 +936,134 @@ if page == '📋  Booking.com':
                                 st.caption(f'{len(detail):,} properties')
                                 st.dataframe(detail, use_container_width=True,
                                              hide_index=True, height=320)
+
+    # ── TAB 4: E-F-L-M Matrix (excludes ColI = churned) ───────────────────────
+    with bcom_tab4:
+        col_e = cols[4]  if len(cols) > 4  else None
+        col_f = cols[5]  if len(cols) > 5  else None
+        col_i = cols[8]  if len(cols) > 8  else None
+        col_l = cols[11] if len(cols) > 11 else None
+        col_m = cols[12] if len(cols) > 12 else None
+
+        if not all([col_e, col_f, col_l, col_m, col_i]):
+            st.warning('Required columns (E, F, I, L, M) not all present.')
+        else:
+            # Filter out ColI = churned
+            colI_strip = bdf[col_i].astype(str).str.strip().str.lower()
+            bdf_matrix = bdf[colI_strip != 'churned'].reset_index(drop=True)
+            excluded   = len(bdf) - len(bdf_matrix)
+
+            st.info(
+                f'Grouped by **{col_e}** · **{col_f}** · **{col_l}** · **{col_m}** · '
+                f'{len(bdf_matrix):,} properties (excluded {excluded:,} where {col_i}=Churned)'
+            )
+
+            grp_cols = [col_e, col_f, col_l, col_m]
+            stripped_grp = {c: bdf_matrix[c].astype(str).str.strip() for c in grp_cols}
+
+            matrix = (
+                pd.DataFrame({c: stripped_grp[c] for c in grp_cols})
+                  .groupby(grp_cols, dropna=False)
+                  .size()
+                  .reset_index(name='Count')
+                  .sort_values('Count', ascending=False)
+            )
+
+            # Filters
+            f1, f2, f3, f4, f5 = st.columns([2, 2, 2, 2, 1])
+            with f1:
+                sel_e = st.multiselect(col_e, sorted(matrix[col_e].dropna().unique().tolist()),
+                                       placeholder=f'All {col_e}', key='mx_e')
+            with f2:
+                sel_f = st.multiselect(col_f, sorted(matrix[col_f].dropna().unique().tolist()),
+                                       placeholder=f'All {col_f}', key='mx_f')
+            with f3:
+                sel_l = st.multiselect(col_l, sorted(matrix[col_l].dropna().unique().tolist()),
+                                       placeholder=f'All {col_l}', key='mx_l')
+            with f4:
+                sel_m = st.multiselect(col_m, sorted(matrix[col_m].dropna().unique().tolist()),
+                                       placeholder=f'All {col_m}', key='mx_m')
+            with f5:
+                st.markdown(' ')
+                hide_zero_mx = st.checkbox('Hide zero', value=True, key='mx_hide_zero')
+
+            view = matrix.copy()
+            if sel_e: view = view[view[col_e].isin(sel_e)]
+            if sel_f: view = view[view[col_f].isin(sel_f)]
+            if sel_l: view = view[view[col_l].isin(sel_l)]
+            if sel_m: view = view[view[col_m].isin(sel_m)]
+            if hide_zero_mx: view = view[view['Count'] > 0]
+
+            # Totals row
+            total_row = {col_e: '—', col_f: '—', col_l: '—', col_m: 'TOTAL', 'Count': int(view['Count'].sum())}
+            view_display = pd.concat([view, pd.DataFrame([total_row])], ignore_index=True)
+
+            def _style_mx(df):
+                styles = pd.DataFrame('', index=df.index, columns=df.columns)
+                styles.iloc[-1] = 'font-weight:700;background-color:#f1f5f9'
+                if 'Count' in df.columns and len(df) > 1:
+                    max_c = df['Count'].iloc[:-1].max() or 1
+                    for i in range(len(df) - 1):
+                        intensity = int(220 - 80 * df['Count'].iloc[i] / max_c)
+                        styles.at[df.index[i], 'Count'] = f'background-color:rgb({intensity},{intensity+20},255);color:#1e3a8a'
+                return styles
+
+            st.caption(f'{len(view):,} groups · {int(view["Count"].sum()):,} properties')
+            sel_matrix = st.dataframe(
+                view_display.style.apply(_style_mx, axis=None),
+                use_container_width=True, hide_index=True,
+                height=min(60 + len(view_display) * 35, 520),
+                selection_mode='single-row',
+                on_select='rerun',
+                key='mx_table_sel',
+            )
+
+            # Drill-down: click a row → show matching properties
+            rows_picked = sel_matrix.selection.rows if hasattr(sel_matrix, 'selection') else []
+            if rows_picked and rows_picked[0] < len(view):
+                picked = view.iloc[rows_picked[0]]
+                drill_mask = (
+                    (stripped_grp[col_e] == picked[col_e]) &
+                    (stripped_grp[col_f] == picked[col_f]) &
+                    (stripped_grp[col_l] == picked[col_l]) &
+                    (stripped_grp[col_m] == picked[col_m])
+                )
+
+                # Property identifier columns
+                prop_id_c   = cols[0] if len(cols) > 0 else None
+                bdc_id_c    = cols[3] if len(cols) > 3 else None
+                prop_name_c = next((c for c in cols if 'name' in c.lower()), None)
+
+                detail_cols = []
+                for c in [prop_id_c, bdc_id_c, prop_name_c, col_e, col_f, col_l, col_m]:
+                    if c and c not in detail_cols:
+                        detail_cols.append(c)
+
+                detail = bdf_matrix.loc[drill_mask.values, detail_cols]
+                st.markdown(
+                    f'**Selected**: `{picked[col_e]}` · `{picked[col_f]}` · '
+                    f'`{picked[col_l]}` · `{picked[col_m]}` — **{len(detail):,} properties**'
+                )
+                st.dataframe(detail, use_container_width=True, hide_index=True, height=380)
+                st.download_button(
+                    '⬇️ Download',
+                    detail.to_csv(index=False).encode('utf-8'),
+                    file_name='efmlm_matrix_drill.csv',
+                    mime='text/csv',
+                    key='dl_mx_drill',
+                )
+            else:
+                st.caption('Click any row in the table to view matching properties →')
+
+            # Full export
+            st.divider()
+            st.download_button(
+                '⬇️ Download full matrix',
+                view.to_csv(index=False).encode('utf-8'),
+                file_name='efmlm_matrix.csv',
+                mime='text/csv',
+                key='dl_mx_full',
+            )
 
     st.stop()
 
