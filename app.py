@@ -522,32 +522,10 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     if _hyg_exclude:
         base_hyg_cols = [c for c in base_hyg_cols if c.strip().lower() not in _hyg_exclude]
 
-    # ── User customization: add extra columns / remove default ones ──────────
-    with st.expander('⚙️ Customize hygiene check columns', expanded=False):
-        cc1, cc2 = st.columns(2)
-
-        # Columns not in the default range — user can opt them in
-        _addable = [c for c in cols if c not in base_hyg_cols]
-        with cc1:
-            added = st.multiselect(
-                '➕ Add columns to Hygiene/Value Summary',
-                options=_addable,
-                default=st.session_state.get(f'{prefix}_hyg_add', []),
-                placeholder='Pick any column outside the N–AH range…',
-                key=f'{prefix}_hyg_add',
-            )
-
-        # Columns in the default range — user can opt out
-        with cc2:
-            removed = st.multiselect(
-                '➖ Remove columns from default range',
-                options=base_hyg_cols,
-                default=st.session_state.get(f'{prefix}_hyg_remove', []),
-                placeholder='Pick default columns to hide…',
-                key=f'{prefix}_hyg_remove',
-            )
-
-        st.caption('Selections persist in your session and apply to both Hygiene Checks and Value Summaries.')
+    # Read user customization from session_state (UI lives inside Hygiene tab)
+    added   = st.session_state.get(f'{prefix}_hyg_add', [])
+    removed = st.session_state.get(f'{prefix}_hyg_remove', [])
+    _addable = [c for c in cols if c not in base_hyg_cols]
 
     # Apply user additions + removals
     hyg_cols = [c for c in base_hyg_cols if c not in set(removed)]
@@ -1282,7 +1260,29 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     except Exception as _e:
         with bcom_tab1: st.error(f'Status tab error: {_e}')
     try:
-        with bcom_tab2: _render_tab2()
+        with bcom_tab2:
+            # Customization UI lives here so it only appears on the Hygiene page.
+            # Rendered OUTSIDE the fragment so changes trigger a full app rerun
+            # (which recomputes hyg_cols at the top and updates all tabs).
+            with st.expander('⚙️ Customize hygiene check columns', expanded=False):
+                _cc1, _cc2 = st.columns(2)
+                with _cc1:
+                    st.multiselect(
+                        '➕ Add columns to Hygiene/Value Summary',
+                        options=_addable,
+                        placeholder='Pick any column outside the N–AH range…',
+                        key=f'{prefix}_hyg_add',
+                    )
+                with _cc2:
+                    st.multiselect(
+                        '➖ Remove columns from default range',
+                        options=base_hyg_cols,
+                        placeholder='Pick default columns to hide…',
+                        key=f'{prefix}_hyg_remove',
+                    )
+                st.caption('Selections persist in your session and apply to both Hygiene Checks and Value Summaries.')
+
+            _render_tab2()
     except Exception as _e:
         with bcom_tab2: st.error(f'Hygiene tab error: {_e}')
     try:
