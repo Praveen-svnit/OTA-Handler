@@ -372,7 +372,7 @@ with st.sidebar:
                 letter-spacing:1px;color:#475569">Tools</div>
     """, unsafe_allow_html=True)
 
-    page = st.radio('nav', ['📊  Mapping Checker', '🕐  Last Checked', '📡  OTA Data'],
+    page = st.radio('nav', ['📊  Mapping Checker', '🕐  Last Checked'],
                     label_visibility='collapsed')
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -424,103 +424,6 @@ if page == '🕐  Last Checked':
         st.download_button('⬇️ Download Details', buf.getvalue(),
                            file_name='last_run_details.xlsx',
                            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    st.stop()
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: OTA DATA
-# ══════════════════════════════════════════════════════════════════════════════
-if page == '📡  OTA Data':
-    st.markdown('## OTA Data')
-    st.caption('Upload data received from each OTA — one tab per channel')
-    st.divider()
-
-    OTA_TABS = [
-        ('Booking.com',  '19',  '🔵'),
-        ('MakeMyTrip',   '105', '🔴'),
-        ('Agoda',        '189', '🟢'),
-        ('Expedia',      '9',   '🟠'),
-        ('EMT',          '217', '🟣'),
-        ('CT',           '351', '⚫'),
-    ]
-
-    tabs = st.tabs([f"{icon} {name}" for name, _, icon in OTA_TABS])
-
-    for tab, (ota_name, ota_code, ota_icon) in zip(tabs, OTA_TABS):
-        with tab:
-            sk = f'ota_df_{ota_code}'   # session key per OTA
-
-            up_col, info_col = st.columns([3, 3])
-            with up_col:
-                f = st.file_uploader(
-                    f'Upload {ota_name} data (.xlsx / .xls / .csv)',
-                    type=['xlsx', 'xls', 'csv'],
-                    key=f'uf_{ota_code}',
-                )
-                if f:
-                    try:
-                        with st.spinner('Reading…'):
-                            df_raw, sheets = read_file(f)
-                        st.session_state[sk] = {'df': df_raw, 'sheets': sheets, 'name': f.name}
-                    except Exception as e:
-                        st.error(str(e))
-
-            with info_col:
-                if sk in st.session_state:
-                    d   = st.session_state[sk]
-                    df_ = d['df']
-                    st.success(
-                        f"**{d['name']}** — {len(df_):,} rows · "
-                        f"{len(df_.columns)} cols · "
-                        f"{len(d['sheets'])} sheet(s)"
-                    )
-                    buf = io.BytesIO()
-                    df_.to_excel(buf, index=False, engine='openpyxl')
-                    st.download_button(
-                        '⬇️ Download',
-                        buf.getvalue(),
-                        file_name=f'{ota_name.lower().replace(".", "")}_data.xlsx',
-                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        key=f'dl_ota_{ota_code}',
-                    )
-
-            if sk in st.session_state:
-                df_ = st.session_state[sk]['df']
-                st.markdown('---')
-                qc1, qc2 = st.columns([4, 1])
-                with qc1:
-                    q = st.text_input(
-                        'Search', placeholder='Filter by property, rate plan, room…',
-                        key=f'q_ota_{ota_code}', label_visibility='collapsed',
-                    )
-                with qc2:
-                    if st.button('✕ Clear data', key=f'clr_{ota_code}'):
-                        del st.session_state[sk]
-                        st.rerun()
-
-                view = df_.copy()
-                if q:
-                    mask = view.apply(
-                        lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1
-                    )
-                    view = view[mask]
-
-                st.caption(f'{len(view):,} row(s) shown')
-                st.dataframe(view, use_container_width=True, height=480, hide_index=True)
-                st.info('📌 Comparison checks against SU/CRS data coming in Phase 2.')
-            else:
-                st.markdown(f"""
-                <div style="border:1.5px dashed #cbd5e1;border-radius:10px;padding:36px 24px;
-                            text-align:center;color:#94a3b8;background:white;margin-top:12px">
-                  <div style="font-size:26px;margin-bottom:8px">{ota_icon}</div>
-                  <div style="font-weight:600;color:#374151;margin-bottom:4px">
-                    Upload {ota_name} Data
-                  </div>
-                  <div style="font-size:12px">
-                    Drop the extract you received from {ota_name} · .xlsx / .xls / .csv
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
-
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -591,6 +494,64 @@ with dash_col:
 su_df    = st.session_state.get('su_df')
 crs_df   = st.session_state.get('crs_df')
 dash_raw = st.session_state.get('dash_raw')
+
+# ── OTA Channel Data ───────────────────────────────────────────────────────────
+OTA_TABS = [
+    ('Booking.com', '19',  '🔵'),
+    ('MakeMyTrip',  '105', '🔴'),
+    ('Agoda',       '189', '🟢'),
+    ('Expedia',     '9',   '🟠'),
+    ('EMT',         '217', '🟣'),
+    ('CT',          '351', '⚫'),
+]
+
+with st.expander('📡 OTA Channel Data (optional — upload data received from each OTA)', expanded=False):
+    ota_tabs = st.tabs([f"{icon} {name}" for name, _, icon in OTA_TABS])
+    for ota_tab, (ota_name, ota_code, ota_icon) in zip(ota_tabs, OTA_TABS):
+        with ota_tab:
+            sk = f'ota_df_{ota_code}'
+            up_c, info_c = st.columns([3, 3])
+            with up_c:
+                f = st.file_uploader(
+                    f'{ota_name} data file',
+                    type=['xlsx', 'xls', 'csv'],
+                    key=f'uf_{ota_code}',
+                )
+                if f:
+                    try:
+                        with st.spinner('Reading…'):
+                            df_raw, ota_sheets = read_file(f)
+                        st.session_state[sk] = {'df': df_raw, 'sheets': ota_sheets, 'name': f.name}
+                    except Exception as e:
+                        st.error(str(e))
+            with info_c:
+                if sk in st.session_state:
+                    d = st.session_state[sk]
+                    st.success(f"**{d['name']}** — {len(d['df']):,} rows · {len(d['df'].columns)} cols")
+                    buf = io.BytesIO()
+                    d['df'].to_excel(buf, index=False, engine='openpyxl')
+                    st.download_button('⬇️ Download', buf.getvalue(),
+                                       file_name=f"{ota_name.lower().replace('.','')}_data.xlsx",
+                                       mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                       key=f'dl_ota_{ota_code}')
+
+            if sk in st.session_state:
+                df_ = st.session_state[sk]['df']
+                qc1, qc2 = st.columns([5, 1])
+                with qc1:
+                    q = st.text_input('Search', placeholder='Filter rows…',
+                                      key=f'q_ota_{ota_code}', label_visibility='collapsed')
+                with qc2:
+                    if st.button('✕ Clear', key=f'clr_{ota_code}'):
+                        del st.session_state[sk]; st.rerun()
+                view = df_.copy()
+                if q:
+                    mask = view.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
+                    view = view[mask]
+                st.caption(f'{len(view):,} row(s)')
+                st.dataframe(view, use_container_width=True, height=340, hide_index=True)
+            else:
+                st.caption(f'No {ota_name} data uploaded yet.')
 
 if su_df is None or crs_df is None:
     st.info('Upload the SU file and fetch CRS data to continue.')
