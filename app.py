@@ -497,7 +497,7 @@ if page == '📋  Booking.com':
     )
 
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
-    bcom_tab1, bcom_tab2 = st.tabs(['📊 Status & Tracker', '🧹 Hygiene Checks'])
+    bcom_tab1, bcom_tab2, bcom_tab3 = st.tabs(['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries'])
 
     with bcom_tab1:
         section('Status & Substatus Summary')
@@ -685,40 +685,48 @@ if page == '📋  Booking.com':
         styled = summary.style.map(color_pct, subset=['Completion %'])
         st.dataframe(styled, use_container_width=True, hide_index=True, height=560)
 
-        # ── Per-column value breakdown ────────────────────────────────────────
-        st.divider()
-        section('Value Summaries — per hygiene column')
-        st.caption('Expand any column to see its full value distribution')
+    # ── TAB 3: Value Summaries ────────────────────────────────────────────────
+    with bcom_tab3:
+        section('Value Summaries — per hygiene column (N to AH)')
+        st.caption('Expand any column to see its full value distribution and missing properties')
 
-        for hc in hyg_cols:
-            vc = hyg_df[hc].str.strip().value_counts(dropna=False).reset_index()
-            vc.columns = ['Value', 'Count']
-            vc['Value'] = vc['Value'].fillna('(blank)').replace('', '(blank)')
-            total_col = len(hyg_df)
-            filled_n  = int(hyg_df[hc].str.strip().ne('').sum())
-            pct_col   = round(filled_n / total_col * 100, 1) if total_col else 0
-            label     = f'{"🟢" if pct_col == 100 else "🟡" if pct_col >= 80 else "🔴"} {hc}  ({pct_col}% filled · {filled_n:,}/{total_col:,})'
-            with st.expander(label, expanded=False):
-                c1, c2 = st.columns([2, 3])
-                with c1:
-                    st.dataframe(vc, use_container_width=True, hide_index=True)
-                with c2:
-                    # Show missing rows for this column
-                    miss = bdf[bdf[hc].str.strip() == ''][cols[:4] + [hc]].copy()
-                    if not miss.empty:
-                        st.caption(f'{len(miss):,} properties missing this field')
-                        st.dataframe(miss, use_container_width=True, hide_index=True, height=220)
-                        buf = io.BytesIO()
-                        miss.to_excel(buf, index=False, engine='openpyxl')
-                        st.download_button(
-                            '⬇️ Download missing',
-                            buf.getvalue(),
-                            file_name=f'missing_{hc[:25]}.xlsx',
-                            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                            key=f'dl_hyg_{hc[:20]}',
-                        )
-                    else:
-                        st.success('All properties have a value ✅')
+        hyg_start3 = col_idx('N')
+        hyg_end3   = col_idx('AH') + 1
+        hyg_cols3  = cols[hyg_start3:hyg_end3]
+        hyg_df3    = bdf[hyg_cols3].copy()
+
+        if not hyg_cols3:
+            st.warning('Columns N–AH not found.')
+        else:
+            for hc in hyg_cols3:
+                vc = hyg_df3[hc].str.strip().value_counts(dropna=False).reset_index()
+                vc.columns = ['Value', 'Count']
+                vc['Value'] = vc['Value'].fillna('(blank)').replace('', '(blank)')
+                total_col = len(hyg_df3)
+                filled_n  = int(hyg_df3[hc].str.strip().ne('').sum())
+                pct_col   = round(filled_n / total_col * 100, 1) if total_col else 0
+                icon      = '🟢' if pct_col == 100 else ('🟡' if pct_col >= 80 else '🔴')
+                label     = f'{icon} {hc}  ({pct_col}% filled · {filled_n:,}/{total_col:,})'
+                with st.expander(label, expanded=False):
+                    c1, c2 = st.columns([2, 3])
+                    with c1:
+                        st.dataframe(vc, use_container_width=True, hide_index=True)
+                    with c2:
+                        miss = bdf[bdf[hc].str.strip() == ''][cols[:4] + [hc]].copy()
+                        if not miss.empty:
+                            st.caption(f'{len(miss):,} properties missing this field')
+                            st.dataframe(miss, use_container_width=True, hide_index=True, height=220)
+                            buf = io.BytesIO()
+                            miss.to_excel(buf, index=False, engine='openpyxl')
+                            st.download_button(
+                                '⬇️ Download missing',
+                                buf.getvalue(),
+                                file_name=f'missing_{hc[:25]}.xlsx',
+                                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                key=f'dl_hyg_{hc[:20]}',
+                            )
+                        else:
+                            st.success('All properties have a value ✅')
 
     st.stop()
 
