@@ -497,10 +497,17 @@ if page == '📋  Booking.com':
     )
 
     # ── Pre-compute hygiene data (shared across tab2 + tab3) ─────────────────
+    # Filter to Sub Status = "Live" only (col F, index 5)
+    sub_status_col_f = cols[5] if len(cols) > 5 else None
+    if sub_status_col_f is not None:
+        bdf_hyg = bdf[bdf[sub_status_col_f].str.strip().str.lower() == 'live'].reset_index(drop=True)
+    else:
+        bdf_hyg = bdf
+
     hyg_start = col_idx('N')
     hyg_end   = col_idx('AH') + 1
     hyg_cols  = cols[hyg_start:hyg_end]
-    hyg_df    = bdf[hyg_cols].copy() if hyg_cols else pd.DataFrame()
+    hyg_df    = bdf_hyg[hyg_cols].copy() if hyg_cols else pd.DataFrame()
 
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
     bcom_tab1, bcom_tab2, bcom_tab3 = st.tabs(['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries'])
@@ -721,6 +728,8 @@ if page == '📋  Booking.com':
 
     # ── TAB 2: Hygiene Checks ─────────────────────────────────────────────────
     with bcom_tab2:
+        if sub_status_col_f:
+            st.info(f'Filtered to **{sub_status_col_f} = Live** · {len(bdf_hyg):,} properties (of {len(bdf):,} total)')
         if hyg_df.empty:
             st.warning('Columns N–AH not found in the sheet.')
         else:
@@ -761,6 +770,8 @@ if page == '📋  Booking.com':
 
     # ── TAB 3: Value Summaries ────────────────────────────────────────────────
     with bcom_tab3:
+        if sub_status_col_f:
+            st.info(f'Filtered to **{sub_status_col_f} = Live** · {len(bdf_hyg):,} properties (of {len(bdf):,} total)')
         if hyg_df.empty:
             st.warning('Columns N–AH not found.')
         else:
@@ -831,9 +842,9 @@ if page == '📋  Booking.com':
                                 st.info('Select "With Link" or "Without Link" from the table on the left.')
                             else:
                                 if chosen == 'with':
-                                    mask = bdf[hc].str.strip() != ''
+                                    mask = bdf_hyg[hc].str.strip() != ''
                                 else:
-                                    mask = bdf[hc].str.strip() == ''
+                                    mask = bdf_hyg[hc].str.strip() == ''
 
                                 show_cols = []
                                 if prop_id_col:   show_cols.append(prop_id_col)
@@ -843,7 +854,7 @@ if page == '📋  Booking.com':
                                 # Dedupe while preserving order
                                 show_cols = list(dict.fromkeys(show_cols))
 
-                                detail = bdf.loc[mask, show_cols].copy()
+                                detail = bdf_hyg.loc[mask, show_cols].copy()
                                 st.caption(f'{len(detail):,} properties')
 
                                 # Make link clickable for "with link" view
@@ -873,7 +884,7 @@ if page == '📋  Booking.com':
                         with c1:
                             st.dataframe(vc_c, use_container_width=True, hide_index=True)
                         with c2:
-                            miss = bdf[bdf[hc].str.strip() == ''][cols[:4] + [hc]].copy()
+                            miss = bdf_hyg[bdf_hyg[hc].str.strip() == ''][cols[:4] + [hc]].copy()
                             if not miss.empty:
                                 st.caption(f'{len(miss):,} properties missing this field')
                                 st.dataframe(miss, use_container_width=True, hide_index=True, height=220)
