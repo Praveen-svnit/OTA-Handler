@@ -496,198 +496,174 @@ if page == '📋  Booking.com':
         + (f' · {churn_cnt} churned (FH Status) removed' if churn_cnt else '')
     )
 
-    # ── REPORT 1: Status & Substatus Summary + Missing from Tracker ──────────
-    section('Report 1 — Status & Substatus Summary')
+    # ── Sub-page tabs ─────────────────────────────────────────────────────────
+    bcom_tab1, bcom_tab2 = st.tabs(['📊 Status & Tracker', '🧹 Hygiene Checks'])
 
-    # Detect substatus and status columns
-    # Exclude gspread duplicate suffixes (.1 .2 …) and unrelated columns
-    _dup_sfx = tuple(f'.{i}' for i in range(1, 20))
+    with bcom_tab1:
+        section('Status & Substatus Summary')
 
-    def _is_dup(c):
-        return c.strip().lower().endswith(_dup_sfx)
+        # Detect columns — prefer exact names, exclude .N duplicates
+        _dup_sfx = tuple(f'.{i}' for i in range(1, 20))
+        def _is_dup(c): return c.strip().lower().endswith(_dup_sfx)
 
-    # substatus: exact "sub status", "substatus", or starts with either
-    substatus_col = next(
-        (c for c in cols if not _is_dup(c) and
-         ('sub status' in c.lower() or 'substatus' in c.lower())),
-        None,
-    )
+        substatus_col = next((c for c in cols if not _is_dup(c) and
+                              ('sub status' in c.lower() or 'substatus' in c.lower())), None)
+        status_col    = next((c for c in cols if c.strip().lower() == 'bdc live'), None)
+        if status_col is None and len(cols) > 4:
+            status_col = cols[4]
 
-    # status = col E "BDC Live" — try by name first, then fall back to index 4
-    status_col = next(
-        (c for c in cols if c.strip().lower() == 'bdc live'),
-        None,
-    )
-    if status_col is None and len(cols) > 4:
-        status_col = cols[4]   # col E (0-based index 4)
+        with st.expander('⚙️ Column configuration', expanded=(substatus_col is None or status_col is None)):
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                substatus_col = st.selectbox('Sub Status column', [None] + cols,
+                    index=([None] + cols).index(substatus_col) if substatus_col in cols else 0,
+                    key='bcom_sub_col')
+            with cc2:
+                status_col = st.selectbox('Status column', [None] + cols,
+                    index=([None] + cols).index(status_col) if status_col in cols else 0,
+                    key='bcom_stat_col')
+            if not substatus_col and not status_col:
+                st.caption('Columns: ' + ' · '.join(cols[:20]) + (' …' if len(cols) > 20 else ''))
 
-    # Manual override if auto-detect fails or user wants to change
-    with st.expander('⚙️ Column configuration', expanded=(substatus_col is None or status_col is None)):
-        cc1, cc2 = st.columns(2)
-        with cc1:
-            substatus_col = st.selectbox(
-                'Sub Status column',
-                [None] + cols,
-                index=([None] + cols).index(substatus_col) if substatus_col in cols else 0,
-                key='bcom_sub_col',
+        if substatus_col and status_col:
+            pivot = (
+                bdf.groupby([bdf[substatus_col].str.strip(), bdf[status_col].str.strip()], dropna=False)
+                   .size().reset_index(name='Count')
             )
-        with cc2:
-            status_col = st.selectbox(
-                'Status column',
-                [None] + cols,
-                index=([None] + cols).index(status_col) if status_col in cols else 0,
-                key='bcom_stat_col',
-            )
-        if not substatus_col and not status_col:
-            st.caption('Available columns: ' + ' · '.join(cols[:20]) + (' …' if len(cols) > 20 else ''))
+            pivot.columns = ['Sub Status', 'Status', 'Count']
+            pivot = pivot.sort_values(['Sub Status', 'Count'], ascending=[True, False])
 
-    # Build pivot: Sub Status | Status | Count
-    if substatus_col and status_col:
-        pivot = (
-            bdf.groupby(
-                [bdf[substatus_col].str.strip(), bdf[status_col].str.strip()],
-                dropna=False,
-            )
-            .size()
-            .reset_index(name='Count')
-        )
-        pivot.columns = ['Sub Status', 'Status', 'Count']
-        pivot = pivot.sort_values(['Sub Status', 'Count'], ascending=[True, False])
-
-        # Tracker comparison — fetch in background and add "Missing from Tracker" column
-        try:
-            available_tabs = fetch_bcom_tabs()
-        except Exception:
-            available_tabs = []
-
-        col_pos = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4}
-
-        tr_cfg1, tr_cfg2, tr_cfg3 = st.columns([2, 2, 1])
-        with tr_cfg1:
-            live_tab = st.selectbox(
-                'Live Properties tab',
-                available_tabs,
-                index=next((i for i, t in enumerate(available_tabs) if 'live' in t.lower()), 0),
-                key='bcom_live_tab',
-            )
-        with tr_cfg2:
-            tracker_tab = st.selectbox(
-                'Properties Tracker tab',
-                available_tabs,
-                index=next((i for i, t in enumerate(available_tabs) if 'tracker' in t.lower()),
-                           min(1, len(available_tabs) - 1)),
-                key='bcom_tracker_tab',
-            )
-        with tr_cfg3:
-            st.markdown(' '); st.markdown(' ')
-            run_cmp = st.button('🔍 Compare', key='bcom_compare_btn', use_container_width=True)
-
-        if run_cmp:
             try:
-                with st.spinner('Fetching tabs…'):
-                    live_df    = fetch_bcom_tab(live_tab)
-                    tracker_df = fetch_bcom_tab(tracker_tab)
+                available_tabs = fetch_bcom_tabs()
+            except Exception:
+                available_tabs = []
 
-                live_id_col    = list(live_df.columns)[0]     # col A
-                tracker_id_col = list(tracker_df.columns)[0]  # col A
+            tr1, tr2, tr3 = st.columns([2, 2, 1])
+            with tr1:
+                live_tab = st.selectbox('Live Properties tab', available_tabs,
+                    index=next((i for i, t in enumerate(available_tabs) if 'live' in t.lower()), 0),
+                    key='bcom_live_tab')
+            with tr2:
+                tracker_tab = st.selectbox('Properties Tracker tab', available_tabs,
+                    index=next((i for i, t in enumerate(available_tabs) if 'tracker' in t.lower()),
+                               min(1, len(available_tabs) - 1)),
+                    key='bcom_tracker_tab')
+            with tr3:
+                st.markdown(' '); st.markdown(' ')
+                run_cmp = st.button('🔍 Compare', key='bcom_compare_btn', use_container_width=True)
 
-                live_ids    = set(live_df[live_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
-                tracker_ids = set(tracker_df[tracker_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
-                missing_ids = live_ids - tracker_ids
+            if run_cmp:
+                try:
+                    with st.spinner('Fetching tabs…'):
+                        live_df    = fetch_bcom_tab(live_tab)
+                        tracker_df = fetch_bcom_tab(tracker_tab)
+                    live_id_col    = list(live_df.columns)[0]
+                    tracker_id_col = list(tracker_df.columns)[0]
+                    live_ids    = set(live_df[live_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
+                    tracker_ids = set(tracker_df[tracker_id_col].str.strip().str.lower().replace('', pd.NA).dropna())
+                    missing_ids = live_ids - tracker_ids
+                    st.session_state['bcom_missing_ids'] = missing_ids
+                    st.session_state['bcom_live_ids']    = live_ids
+                    st.session_state['bcom_tracker_ids'] = tracker_ids
+                    st.session_state['bcom_live_df']     = live_df
+                    st.session_state['bcom_live_id_col'] = live_id_col
+                except Exception as e:
+                    st.error(str(e))
 
-                st.session_state['bcom_missing_ids']  = missing_ids
-                st.session_state['bcom_live_ids']     = live_ids
-                st.session_state['bcom_tracker_ids']  = tracker_ids
-                st.session_state['bcom_live_df']      = live_df
-                st.session_state['bcom_live_id_col']  = live_id_col
-            except Exception as e:
-                st.error(str(e))
+            missing_ids   = st.session_state.get('bcom_missing_ids')
+            live_df_s     = st.session_state.get('bcom_live_df')
+            live_id_col_s = st.session_state.get('bcom_live_id_col')
 
-        # Show the pivot table with optional Missing from Tracker column
-        missing_ids = st.session_state.get('bcom_missing_ids')
-        live_df_s   = st.session_state.get('bcom_live_df')
-        live_id_col_s = st.session_state.get('bcom_live_id_col')
-
-        display_pivot = pivot.copy()
-        if missing_ids is not None and live_df_s is not None:
-            # Count how many missing IDs fall into each (substatus, status) group
-            # We need to join missing rows back to pivot groups
-            live_missing = live_df_s[
-                live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)
-            ].copy()
-
-            # Use the same substatus/status columns if they exist in live_df
-            if substatus_col in live_missing.columns and status_col in live_missing.columns:
-                miss_grp = (
-                    live_missing.groupby(
-                        [live_missing[substatus_col].str.strip(), live_missing[status_col].str.strip()],
-                        dropna=False,
+            display_pivot = pivot.copy()
+            if missing_ids is not None and live_df_s is not None:
+                live_missing = live_df_s[live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)].copy()
+                if substatus_col in live_missing.columns and status_col in live_missing.columns:
+                    miss_grp = (
+                        live_missing.groupby(
+                            [live_missing[substatus_col].str.strip(), live_missing[status_col].str.strip()],
+                            dropna=False)
+                        .size().reset_index(name='Missing from Tracker')
                     )
-                    .size()
-                    .reset_index(name='Missing from Tracker')
-                )
-                miss_grp.columns = ['Sub Status', 'Status', 'Missing from Tracker']
-                display_pivot = display_pivot.merge(miss_grp, on=['Sub Status', 'Status'], how='left')
-                display_pivot['Missing from Tracker'] = display_pivot['Missing from Tracker'].fillna(0).astype(int)
-            else:
-                # Can't group by same columns — just show total as a metric
-                _live_ids    = st.session_state.get('bcom_live_ids', set())
-                _tracker_ids = st.session_state.get('bcom_tracker_ids', set())
-                m1, m2, m3 = st.columns(3)
-                m1.metric('Live Properties', f'{len(_live_ids):,}')
-                m2.metric('In Tracker',      f'{len(_tracker_ids):,}')
-                m3.metric('Missing',         f'{len(missing_ids):,}')
+                    miss_grp.columns = ['Sub Status', 'Status', 'Missing from Tracker']
+                    display_pivot = display_pivot.merge(miss_grp, on=['Sub Status', 'Status'], how='left')
+                    display_pivot['Missing from Tracker'] = display_pivot['Missing from Tracker'].fillna(0).astype(int)
+                else:
+                    _li = st.session_state.get('bcom_live_ids', set())
+                    _ti = st.session_state.get('bcom_tracker_ids', set())
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric('Live', f'{len(_li):,}')
+                    m2.metric('In Tracker', f'{len(_ti):,}')
+                    m3.metric('Missing', f'{len(missing_ids):,}')
 
-        st.caption(
-            f'**{substatus_col}** × **{status_col}** · {len(bdf):,} properties'
-            + (' · click Compare to add missing column' if missing_ids is None else '')
-        )
-        st.dataframe(display_pivot, use_container_width=False, hide_index=True, height=420)
+            st.caption(f'**{substatus_col}** × **{status_col}** · {len(bdf):,} properties'
+                       + (' · click Compare to add missing column' if missing_ids is None else ''))
+            st.dataframe(display_pivot, use_container_width=False, hide_index=True, height=420)
 
-        # If there are missing properties, show the detail below the table
-        if missing_ids:
-            live_df_s   = st.session_state['bcom_live_df']
-            live_id_col_s = st.session_state['bcom_live_id_col']
-            missing_df  = live_df_s[live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)].copy()
-            with st.expander(f'⚠️ {len(missing_df):,} properties missing from Tracker — click to view', expanded=False):
-                qm = st.text_input('Search', placeholder='Filter missing…', key='miss_q', label_visibility='collapsed')
-                if qm:
-                    mask = missing_df.apply(lambda r: r.astype(str).str.contains(qm, case=False, regex=False).any(), axis=1)
-                    missing_df = missing_df[mask]
-                st.caption(f'{len(missing_df):,} row(s)')
-                st.dataframe(missing_df, use_container_width=True, hide_index=True, height=360)
-                buf = io.BytesIO()
-                missing_df.to_excel(buf, index=False, engine='openpyxl')
-                st.download_button('⬇️ Download Missing', buf.getvalue(),
-                                   file_name='missing_from_tracker.xlsx',
-                                   mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                   key='dl_missing_tracker')
-        elif missing_ids is not None:
-            st.success('✅ All Live properties are present in the Properties Tracker.')
+            if missing_ids:
+                missing_df = live_df_s[live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)].copy()
+                with st.expander(f'⚠️ {len(missing_df):,} properties missing from Tracker', expanded=False):
+                    qm = st.text_input('Search', placeholder='Filter…', key='miss_q', label_visibility='collapsed')
+                    if qm:
+                        mask = missing_df.apply(lambda r: r.astype(str).str.contains(qm, case=False, regex=False).any(), axis=1)
+                        missing_df = missing_df[mask]
+                    st.caption(f'{len(missing_df):,} row(s)')
+                    st.dataframe(missing_df, use_container_width=True, hide_index=True, height=360)
+                    buf = io.BytesIO()
+                    missing_df.to_excel(buf, index=False, engine='openpyxl')
+                    st.download_button('⬇️ Download Missing', buf.getvalue(),
+                                       file_name='missing_from_tracker.xlsx',
+                                       mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                       key='dl_missing_tracker')
+            elif missing_ids is not None:
+                st.success('✅ All Live properties are in the Tracker.')
+        else:
+            st.warning('Select Sub Status and Status columns above.')
 
-    st.divider()
+        st.divider()
+      with st.expander('📄 Raw Data (incl. churn)', expanded=False):
+          q = st.text_input('Search', placeholder='Filter rows…', key='bcom_raw_q',
+                            label_visibility='collapsed')
+          view = bdf_raw.copy()
+          if q:
+              mask = view.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
+              view = view[mask]
+          st.caption(f'{len(view):,} row(s)')
+          st.dataframe(view, use_container_width=True, hide_index=True, height=400)
+          buf = io.BytesIO()
+          bdf_raw.to_excel(buf, index=False, engine='openpyxl')
+          st.download_button('⬇️ Download full sheet', buf.getvalue(),
+                             file_name='bcom_data.xlsx',
+                             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             key='dl_bcom_raw')
 
-    # ── REPORT 2: Hygiene Checks (col N → AH) ────────────────────────────────
-    section('Report 2 — Hygiene Checks (Col N to AH)')
+    # ── TAB 2: Hygiene Checks ─────────────────────────────────────────────────
+    with bcom_tab2:
+        hyg_start = col_idx('N')
+        hyg_end   = col_idx('AH') + 1
+        hyg_cols  = cols[hyg_start:hyg_end]
 
-    hyg_start = col_idx('N')
-    hyg_end   = col_idx('AH') + 1
-    hyg_cols  = cols[hyg_start:hyg_end]
+        if not hyg_cols:
+            st.warning('Columns N–AH not found in the sheet.')
+            st.stop()
 
-    if hyg_cols:
         hyg_df = bdf[hyg_cols].copy()
 
+        # ── Completion summary ────────────────────────────────────────────────
         summary_rows = []
         for hc in hyg_cols:
             total  = len(hyg_df)
             filled = int(hyg_df[hc].str.strip().ne('').sum())
             empty  = total - filled
             pct    = round(filled / total * 100, 1) if total else 0
+            # top values present in this column
+            vc     = hyg_df[hc].str.strip().replace('', pd.NA).dropna().value_counts()
+            top    = ' · '.join(f'{v} ({n})' for v, n in vc.head(3).items())
             summary_rows.append({
-                'Check':        hc,
-                '✅ Filled':    filled,
-                '❌ Missing':   empty,
-                'Completion %': pct,
+                'Check':          hc,
+                '✅ Filled':      filled,
+                '❌ Missing':     empty,
+                'Completion %':   pct,
+                'Top Values':     top,
             })
 
         summary = pd.DataFrame(summary_rows)
@@ -695,9 +671,9 @@ if page == '📋  Booking.com':
         issues  = int((summary['Completion %'] < 100).sum())
 
         sm1, sm2, sm3 = st.columns(3)
-        sm1.metric('Hygiene Columns Checked', len(hyg_cols))
-        sm2.metric('Avg Completion',          f'{avg_pct}%')
-        sm3.metric('Columns with Gaps',       issues)
+        sm1.metric('Hygiene Columns', len(hyg_cols))
+        sm2.metric('Avg Completion',  f'{avg_pct}%')
+        sm3.metric('Columns with Gaps', issues)
 
         st.markdown(' ')
 
@@ -707,42 +683,42 @@ if page == '📋  Booking.com':
             return 'background-color:#fee2e2;color:#991b1b'
 
         styled = summary.style.map(color_pct, subset=['Completion %'])
-        st.dataframe(styled, use_container_width=True, hide_index=True, height=600)
+        st.dataframe(styled, use_container_width=True, hide_index=True, height=560)
 
-        with st.expander('🔍 Drill down — rows missing a specific check', expanded=False):
-            chosen_check = st.selectbox('Select hygiene column', hyg_cols, key='hyg_drill')
-            missing_rows = bdf[bdf[chosen_check].str.strip() == ''].copy()
-            st.caption(f'{len(missing_rows):,} properties missing **{chosen_check}**')
-            if not missing_rows.empty:
-                display_cols = cols[:5] + ([chosen_check] if chosen_check not in cols[:5] else [])
-                st.dataframe(missing_rows[display_cols], use_container_width=True,
-                             hide_index=True, height=360)
-                buf = io.BytesIO()
-                missing_rows.to_excel(buf, index=False, engine='openpyxl')
-                st.download_button('⬇️ Download missing rows', buf.getvalue(),
-                                   file_name=f'missing_{chosen_check[:20]}.xlsx',
-                                   mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                   key='dl_hyg_drill')
-    else:
-        st.warning('Columns N–AH not found.')
+        # ── Per-column value breakdown ────────────────────────────────────────
+        st.divider()
+        section('Value Summaries — per hygiene column')
+        st.caption('Expand any column to see its full value distribution')
 
-    st.divider()
-
-    with st.expander('📄 Raw Data (incl. churn)', expanded=False):
-        q = st.text_input('Search', placeholder='Filter rows…', key='bcom_raw_q',
-                          label_visibility='collapsed')
-        view = bdf_raw.copy()
-        if q:
-            mask = view.apply(lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1)
-            view = view[mask]
-        st.caption(f'{len(view):,} row(s)')
-        st.dataframe(view, use_container_width=True, hide_index=True, height=400)
-        buf = io.BytesIO()
-        bdf_raw.to_excel(buf, index=False, engine='openpyxl')
-        st.download_button('⬇️ Download full sheet', buf.getvalue(),
-                           file_name='bcom_data.xlsx',
-                           mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                           key='dl_bcom_raw')
+        for hc in hyg_cols:
+            vc = hyg_df[hc].str.strip().value_counts(dropna=False).reset_index()
+            vc.columns = ['Value', 'Count']
+            vc['Value'] = vc['Value'].fillna('(blank)').replace('', '(blank)')
+            total_col = len(hyg_df)
+            filled_n  = int(hyg_df[hc].str.strip().ne('').sum())
+            pct_col   = round(filled_n / total_col * 100, 1) if total_col else 0
+            label     = f'{"🟢" if pct_col == 100 else "🟡" if pct_col >= 80 else "🔴"} {hc}  ({pct_col}% filled · {filled_n:,}/{total_col:,})'
+            with st.expander(label, expanded=False):
+                c1, c2 = st.columns([2, 3])
+                with c1:
+                    st.dataframe(vc, use_container_width=True, hide_index=True)
+                with c2:
+                    # Show missing rows for this column
+                    miss = bdf[bdf[hc].str.strip() == ''][cols[:4] + [hc]].copy()
+                    if not miss.empty:
+                        st.caption(f'{len(miss):,} properties missing this field')
+                        st.dataframe(miss, use_container_width=True, hide_index=True, height=220)
+                        buf = io.BytesIO()
+                        miss.to_excel(buf, index=False, engine='openpyxl')
+                        st.download_button(
+                            '⬇️ Download missing',
+                            buf.getvalue(),
+                            file_name=f'missing_{hc[:25]}.xlsx',
+                            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            key=f'dl_hyg_{hc[:20]}',
+                        )
+                    else:
+                        st.success('All properties have a value ✅')
 
     st.stop()
 
