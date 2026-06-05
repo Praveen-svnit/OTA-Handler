@@ -513,6 +513,11 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     hyg_end   = col_idx('AH') + 1
     hyg_cols  = cols[hyg_start:hyg_end]
 
+    # Channel-specific exclusion list (e.g., status/category cols mixed in N-AH range)
+    _hyg_exclude = {e.strip().lower() for e in cfg.get('hyg_exclude', []) if e}
+    if _hyg_exclude:
+        hyg_cols = [c for c in hyg_cols if c.strip().lower() not in _hyg_exclude]
+
     @st.cache_data(ttl=3600, show_spinner=False)
     def _build_hyg_data(_bdf, sub_col, h_cols, cache_key):
         if sub_col is not None:
@@ -1246,6 +1251,7 @@ _BCOM_CFG = {
     'sub_status_letter': 'F',
     'default_live_tab':    None,    # auto-detect "live" in tab name
     'default_tracker_tab': None,    # auto-detect "tracker" in tab name
+    'hyg_exclude': [],
 }
 _GOMMT_CFG = {
     'fh_status_letter':  'N',
@@ -1254,6 +1260,7 @@ _GOMMT_CFG = {
     'sub_status_letter': 'P',
     'default_live_tab':    'Live Sheet',
     'default_tracker_tab': 'Main',
+    'hyg_exclude': ['FH Live Prop', 'MMT Shell Status', 'GO-MMT Sub Status', 'Set'],
 }
 
 # ── Dispatch to channel page ──────────────────────────────────────────────────
