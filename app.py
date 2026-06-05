@@ -372,7 +372,8 @@ with st.sidebar:
                 letter-spacing:1px;color:#475569">Tools</div>
     """, unsafe_allow_html=True)
 
-    page = st.radio('nav', ['📊  Mapping Checker', '🕐  Last Checked', '📋  Booking.com'],
+    page = st.radio('nav',
+                    ['📋  Booking.com', '📊  Mapping Checker', '🕐  Last Checked'],
                     label_visibility='collapsed')
 
 # ══════════════════════════════════════════════════════════════════════════════
