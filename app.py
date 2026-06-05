@@ -585,7 +585,7 @@ if page == '📋  Booking.com':
             if val >= 80:    return 'background-color:#fef9c3;color:#713f12'
             return 'background-color:#fee2e2;color:#991b1b'
 
-        styled = summary.style.applymap(color_pct, subset=['Completion %'])
+        styled = summary.style.map(color_pct, subset=['Completion %'])
         st.dataframe(styled, use_container_width=True, hide_index=True, height=600)
 
         # Detail drill-down: show rows missing a specific check
