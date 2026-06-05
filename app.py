@@ -6,6 +6,7 @@ from sheets import (
     fetch_crs, fetch_dashboard, save_run, fetch_log, fetch_details,
     fetch_bcom, fetch_bcom_tab, fetch_bcom_tabs,
     fetch_gommt, fetch_gommt_tab, fetch_gommt_tabs,
+    fetch_listing,
 )
 
 st.set_page_config(page_title="SU Mapping Checker", layout="wide", page_icon="🔍",
@@ -377,7 +378,8 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     page = st.radio('nav',
-                    ['📋  Booking.com', '📘  GoMMT', '📊  Mapping Checker', '🕐  Last Checked'],
+                    ['📋  Booking.com', '📘  GoMMT', '📂  Listing Tracker',
+                     '📊  Mapping Checker', '🕐  Last Checked'],
                     label_visibility='collapsed')
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1344,6 +1346,102 @@ if page == '📋  Booking.com':
     st.stop()
 elif page == '📘  GoMMT':
     _render_channel_page('GoMMT', 'gommt', fetch_gommt, fetch_gommt_tabs, fetch_gommt_tab, _GOMMT_CFG)
+    st.stop()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: LISTING TRACKER
+# ══════════════════════════════════════════════════════════════════════════════
+if page == '📂  Listing Tracker':
+    # Compact Next.js-style header
+    _h1, _h2 = st.columns([8, 1])
+    with _h1:
+        st.markdown(
+            '<div style="display:flex;align-items:baseline;gap:10px;margin:0 0 2px">'
+            '<div style="font-size:20px;font-weight:700;color:#0f172a;letter-spacing:-0.01em">Listing Tracker</div>'
+            '<div style="font-size:11px;color:#64748b">Property listing data from the dashboard sheet</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    with _h2:
+        if st.button('🔄 Refresh', use_container_width=True, key='listing_refresh'):
+            fetch_listing.clear()
+
+    try:
+        with st.spinner('Loading Listing Tracker…'):
+            ldf = fetch_listing()
+    except Exception as e:
+        st.error(f'Could not load Listing Tracker: {e}')
+        st.info('Make sure the service account has Viewer access to the dashboard sheet.')
+        st.stop()
+
+    if ldf.empty:
+        st.warning('Sheet returned no data.')
+        st.stop()
+
+    _lcols = list(ldf.columns)
+
+    # Chip stats
+    st.markdown(
+        f'<div style="margin:-4px 0 10px">'
+        f'<span style="background:#ecfdf5;color:#047857;font-size:11px;font-weight:600;'
+        f'padding:3px 9px;border-radius:6px;margin-right:6px">'
+        f'<b>{len(ldf):,}</b> rows</span>'
+        f'<span style="background:#f1f5f9;color:#475569;font-size:11px;font-weight:500;'
+        f'padding:3px 9px;border-radius:6px">{len(_lcols)} cols</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Filters + search row
+    fcol, scol = st.columns([3, 5])
+    with fcol:
+        # Optional column-value filter
+        _filter_col = st.selectbox(
+            'Filter by column',
+            options=[None] + _lcols,
+            placeholder='Pick a column to filter by…',
+            key='listing_filter_col',
+        )
+        if _filter_col:
+            _opts = sorted({str(v) for v in ldf[_filter_col].dropna().tolist() if str(v).strip()})
+            _filter_vals = st.multiselect(
+                f'Values of {_filter_col}',
+                options=_opts,
+                placeholder='All values',
+                key='listing_filter_vals',
+            )
+        else:
+            _filter_vals = []
+
+    with scol:
+        st.write(' ')
+        q = st.text_input(
+            'Search', placeholder='Search across all columns…',
+            key='listing_search', label_visibility='collapsed',
+        )
+
+    # Apply filters
+    view = ldf.copy()
+    if _filter_col and _filter_vals:
+        view = view[view[_filter_col].astype(str).isin(_filter_vals)]
+    if q:
+        mask = view.apply(
+            lambda r: r.astype(str).str.contains(q, case=False, regex=False).any(), axis=1
+        )
+        view = view[mask]
+
+    st.caption(f'{len(view):,} row(s)')
+    st.dataframe(view, use_container_width=True, hide_index=True, height=560)
+
+    st.download_button(
+        '⬇️ Download (CSV)',
+        view.to_csv(index=False).encode('utf-8'),
+        file_name='listing_tracker.csv',
+        mime='text/csv',
+        key='dl_listing',
+    )
+
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════

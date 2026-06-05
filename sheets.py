@@ -10,6 +10,8 @@ GOMMT_SHEET_ID = '1Pr2iEC7UvI7sWgwx4qQGQcO9Iw3dyzBqLpAr2mrQvKc'
 CRS_SHEET_TAB  = 'CRS DATA'
 DASH_SHEET_ID  = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU'
 DASH_SHEET_TAB = 'Prop Level Dashboard'
+LISTING_SHEET_ID = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU'
+LISTING_GID      = 158406294
 LOG_TAB        = 'Last Checked'
 DETAIL_TAB     = 'Last Run Details'
 
@@ -115,6 +117,28 @@ def fetch_dashboard() -> list:
     gc = _gc()
     ws = gc.open_by_key(DASH_SHEET_ID).worksheet(DASH_SHEET_TAB)
     return ws.get_all_values()
+
+
+# ── Listing Tracker ────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_listing():
+    """Fetch the Listing Tracker tab from the dashboard sheet by gid."""
+    gc = _gc()
+    wb = gc.open_by_key(LISTING_SHEET_ID)
+    ws = None
+    # Try get_worksheet_by_id (gspread 6+); fall back to manual lookup
+    try:
+        ws = wb.get_worksheet_by_id(LISTING_GID)
+    except Exception:
+        for w in wb.worksheets():
+            if w.id == LISTING_GID:
+                ws = w
+                break
+    if ws is None:
+        available = [(w.title, w.id) for w in wb.worksheets()]
+        raise Exception(f'Tab with gid {LISTING_GID} not found. Available: {available}')
+    return _rows_to_df(ws.get_all_values())
 
 
 # ── Run log helpers ────────────────────────────────────────────────────────────
