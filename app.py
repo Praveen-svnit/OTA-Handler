@@ -589,7 +589,6 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     # The fragment decorator on a closure means the entire body skips re-execution
     # when no Streamlit widget *inside* that fragment changed.
 
-    @st.fragment
     def _render_tab1():
         section('Status & Substatus Summary')
 
@@ -913,7 +912,6 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                                key=f'dl_{prefix}_raw')
 
     # ── TAB 2: Hygiene Checks ─────────────────────────────────────────────────
-    @st.fragment
     def _render_tab2():
         if sub_status_col_f:
             st.info(f'Filtered to **{sub_status_col_f} = Live** · {len(bdf_hyg):,} properties (of {len(bdf):,} total)')
@@ -956,7 +954,6 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
             st.dataframe(styled, use_container_width=True, hide_index=True, height=560)
 
     # ── TAB 3: Value Summaries ────────────────────────────────────────────────
-    @st.fragment
     def _render_tab3():
         if sub_status_col_f:
             st.info(f'Filtered to **{sub_status_col_f} = Live** · {len(bdf_hyg):,} properties (of {len(bdf):,} total)')
@@ -1113,7 +1110,6 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                                              hide_index=True, height=320)
 
     # ── TAB 4: E-F-L-M Matrix (excludes ColI = churned) ───────────────────────
-    @st.fragment
     def _render_tab4():
         # Channel-configured matrix grouping columns
         _mx_letters = cfg.get('matrix_letters', ('E', 'F', 'L', 'M'))
