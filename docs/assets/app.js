@@ -24,7 +24,8 @@
       API.bcomTabs(),
       API.gommtTabs(),
     ]);
-    const bcomLive = (bcomTabs.value?.tabs || []).find(t => t.toLowerCase().includes('live')) || null;
+    const bcomLive = (bcomTabs.value?.tabs || []).find(t => t.trim().toLowerCase() === 'live') ||
+                     (bcomTabs.value?.tabs || []).find(t => t.toLowerCase().includes('live')) || null;
     const gommtLive = 'Live Sheet';
     await Promise.allSettled([
       bcomLive ? API.bcomTab(bcomLive) : Promise.resolve(),

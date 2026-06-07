@@ -92,7 +92,8 @@
             liveTab = cfg.defaultLiveTab;
           } else {
             const tabs = await cfg.fetchTabs();
-            liveTab = (tabs.tabs || []).find(t => t.toLowerCase().includes('live')) || tabs.tabs[0];
+            liveTab = (tabs.tabs || []).find(t => t.trim().toLowerCase() === 'live') ||
+                      (tabs.tabs || []).find(t => t.toLowerCase().includes('live')) || tabs.tabs[0];
           }
           state.liveTab = liveTab;
         }
