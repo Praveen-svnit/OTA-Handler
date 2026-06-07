@@ -67,11 +67,11 @@
       title: cfg.title,
       subtitle: cfg.subtitle,
       onRefresh: async () => {
-        UI.toast('Refreshing…');
+        UI.toast('Refreshing\u2026');
         try {
           state.payload = await cfg.fetchMainFresh();
-          state.tabs = null;
-          state.pivot = null;
+          state.liveData = null;
+          state.liveTab = null;
           render(target, cfgKey);
           UI.toast('Refreshed');
         } catch (e) {
@@ -117,7 +117,7 @@
     const matrixLabel = cfg.matrixLetters.join('-') + ' Matrix';
     UI.tabsView([
       { id: 'status',  label: 'Status & Tracker',
-        render: (body) => renderStatusTracker(body, cfg, state, cols, records) },
+        render: (body) => renderStatusTracker(body, cfg, state) },
       { id: 'hygiene', label: 'Hygiene Checks',
         render: (body) => renderHygiene(body, cfg, state, cols, records) },
       { id: 'values',  label: 'Value Summaries',
@@ -128,193 +128,72 @@
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // TAB 1: Status & Tracker
+  // TAB 1: Status & Tracker — shows the "Live" tab from the sheet
   // ──────────────────────────────────────────────────────────────────────────
-  async function renderStatusTracker(body, cfg, state, cols, records) {
-    const subCol = cols[colIdx(cfg.subStatusLetter)] || cols[5];
-    const staCol = cols[colIdx(cfg.statusLetter)]    || cols[4];
-
-    // Build pivot
-    const pivotMap = new Map();
-    records.forEach(r => {
-      const k = strip(r[subCol]) + '||' + strip(r[staCol]);
-      pivotMap.set(k, (pivotMap.get(k) || 0) + 1);
-    });
-    let pivot = Array.from(pivotMap.entries()).map(([k, n]) => {
-      const [sub, sta] = k.split('||');
-      return { [subCol]: sub, [staCol]: sta, Count: n };
-    });
-    pivot.sort((a, b) => b.Count - a.Count);
-
-    // Tracker comparison (auto-fetch on first render)
-    if (!state.tracker) {
-      try {
-        UI.updateLoader('Loading tab list\u2026');
-        state.availableTabs = state.availableTabs || await cfg.fetchTabs();
-        const tabs = state.availableTabs.tabs || [];
-        const liveTab = state.liveTab || cfg.defaultLiveTab ||
-          tabs.find(t => t.toLowerCase().includes('live')) || tabs[0];
-        const trackerTab = state.trackerTab || cfg.defaultTrackerTab ||
-          tabs.find(t => t.toLowerCase().includes('tracker')) || tabs[1] || tabs[0];
-        state.liveTab = liveTab;
-        state.trackerTab = trackerTab;
-
-        if (liveTab && trackerTab) {
-          UI.updateLoader('Comparing ' + liveTab + ' vs ' + trackerTab + '\u2026');
-          const [liveData, trackerData] = await Promise.all([
-            cfg.fetchTab(liveTab),
-            cfg.fetchTab(trackerTab),
-          ]);
-          const liveRecs    = UI.toRecords(liveData);
-          const trackerRecs = UI.toRecords(trackerData);
-          const liveIdCol = liveData.cols[state.liveIdIdx || 0];
-          const trkIdCol  = trackerData.cols[state.trackerIdIdx || 0];
-          const trkSet    = new Set(trackerRecs.map(r => strip(r[trkIdCol]).toLowerCase()).filter(Boolean));
-          const liveIds   = liveRecs.map(r => strip(r[liveIdCol]).toLowerCase()).filter(Boolean);
-          const liveSet   = new Set(liveIds);
-          const missing   = new Set(liveIds.filter(id => !trkSet.has(id)));
-          state.tracker = {
-            liveData, trackerData, liveRecs, trackerRecs, liveIdCol, trkIdCol,
-            liveCount: liveSet.size, trackerCount: trkSet.size, missingCount: missing.size,
-            missingSet: missing,
-          };
+  async function renderStatusTracker(body, cfg, state) {
+    // Find the Live tab name
+    let liveTab = state.liveTab;
+    if (!liveTab) {
+      if (cfg.defaultLiveTab) {
+        liveTab = cfg.defaultLiveTab;
+      } else {
+        try {
+          UI.updateLoader('Finding Live tab\u2026');
+          const tabs = await cfg.fetchTabs();
+          liveTab = (tabs.tabs || []).find(t => t.toLowerCase().includes('live')) || tabs.tabs[0];
+        } catch (e) {
+          body.appendChild(UI.el('div', { class: 'splash' }, 'Could not find Live tab: ' + e.message));
+          return;
         }
-      } catch (e) {
-        state.trackerError = e.message;
       }
+      state.liveTab = liveTab;
     }
 
-    // Augment pivot with "Missing from Tracker" count
-    let pivotHasMissing = false;
-    if (state.tracker && state.tracker.liveRecs.length) {
-      const tr = state.tracker;
-      const subOK = tr.liveData.cols.includes(subCol);
-      const staOK = tr.liveData.cols.includes(staCol);
-      if (subOK && staOK) {
-        const missMap = new Map();
-        tr.liveRecs.forEach(r => {
-          const id = strip(r[tr.liveIdCol]).toLowerCase();
-          if (!tr.missingSet.has(id)) return;
-          const k = strip(r[subCol]) + '||' + strip(r[staCol]);
-          missMap.set(k, (missMap.get(k) || 0) + 1);
-        });
-        pivot.forEach(p => {
-          const k = p[subCol] + '||' + p[staCol];
-          p['Missing from Tracker'] = missMap.get(k) || 0;
-        });
-        pivotHasMissing = true;
-      }
+    // Fetch Live tab data
+    let liveData;
+    try {
+      UI.updateLoader('Loading ' + liveTab + '\u2026');
+      liveData = state.liveData || (state.liveData = await cfg.fetchTab(liveTab));
+    } catch (e) {
+      body.appendChild(UI.el('div', { class: 'splash' }, 'Could not load: ' + e.message));
+      return;
     }
 
-    // Tracker metrics
-    if (state.tracker) {
-      body.appendChild(UI.metricRow([
-        { label: 'Live IDs',    value: state.tracker.liveCount.toLocaleString() },
-        { label: 'In Tracker',  value: state.tracker.trackerCount.toLocaleString() },
-        { label: 'Missing',     value: state.tracker.missingCount.toLocaleString() },
-      ]));
-    } else if (state.trackerError) {
-      body.appendChild(UI.el('div', { class: 'stats' }, 'Tracker comparison unavailable: ' + state.trackerError));
-    }
+    const liveCols = liveData.cols;
+    const liveRecords = UI.toRecords(liveData);
+    body.appendChild(UI.stats([`<b>${liveRecords.length.toLocaleString()}</b> rows`, liveCols.length + ' columns', liveTab]));
 
-    // Filters
-    const subValues = Array.from(new Set(pivot.map(r => r[subCol]))).sort();
-    const staValues = Array.from(new Set(pivot.map(r => r[staCol]))).sort();
-    state.fSub = state.fSub || [];
-    state.fSta = state.fSta || [];
-    state.hideZero = state.hideZero !== false;
+    // Search + table
+    const tb = UI.toolbar({
+      placeholder: 'Search all columns\u2026',
+      countText: liveRecords.length.toLocaleString() + ' rows',
+      onChange: (v) => { state.search = v; redraw(); },
+    });
+    body.appendChild(tb.el);
+    tb.input.value = state.search || '';
 
-    body.appendChild(UI.sectionLabel('Filters'));
-    const fbar = UI.el('div', { class: 'filters' });
-    fbar.appendChild(UI.el('div', { class: 'filter' }, [
-      UI.el('div', { class: 'filter-label' }, subCol),
-      UI.multiselect({
-        label: subCol, options: subValues, selected: state.fSub,
-        placeholder: 'All', onChange: (v) => { state.fSub = v; redrawTable(); },
-      }).el,
-    ]));
-    fbar.appendChild(UI.el('div', { class: 'filter' }, [
-      UI.el('div', { class: 'filter-label' }, staCol),
-      UI.multiselect({
-        label: staCol, options: staValues, selected: state.fSta,
-        placeholder: 'All', onChange: (v) => { state.fSta = v; redrawTable(); },
-      }).el,
-    ]));
-    const hideToggle = UI.el('label', { class: 'toggle' }, [
-      UI.el('input', { type: 'checkbox', onChange: (e) => { state.hideZero = e.target.checked; redrawTable(); } }),
-      ' Hide zero',
-    ]);
-    hideToggle.querySelector('input').checked = state.hideZero;
-    fbar.appendChild(hideToggle);
-    body.appendChild(fbar);
-
-    // Table area
     const tableHost = UI.el('div');
-    const drillHost = UI.el('div');
     body.appendChild(tableHost);
-    body.appendChild(drillHost);
 
-    function redrawTable() {
-      tableHost.innerHTML = '';
-      let view = pivot.slice();
-      if (state.fSub.length) view = view.filter(r => state.fSub.includes(r[subCol]));
-      if (state.fSta.length) view = view.filter(r => state.fSta.includes(r[staCol]));
-      if (state.hideZero) view = view.filter(r => r.Count > 0);
-
-      const totalRow = { [subCol]: 'TOTAL', [staCol]: '', Count: view.reduce((s, r) => s + r.Count, 0) };
-      if (pivotHasMissing) totalRow['Missing from Tracker'] = view.reduce((s, r) => s + (r['Missing from Tracker'] || 0), 0);
-
-      const columns = [
-        { key: subCol, label: subCol },
-        { key: staCol, label: staCol },
-        { key: 'Count', label: 'Count',
-          fmt: v => v.toLocaleString(),
-          cellClass: () => 'count-cell num' },
-      ];
-      if (pivotHasMissing) {
-        columns.push({
-          key: 'Missing from Tracker', label: 'Missing from Tracker',
-          fmt: v => (v || 0).toLocaleString(),
-          cellClass: (v) => 'num' + ((v || 0) > 0 ? ' missing-pos' : ''),
-        });
+    function redraw() {
+      let view = liveRecords;
+      if (state.search) {
+        const q = state.search.toLowerCase();
+        view = view.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q)));
       }
-
+      tb.el.querySelector('.count').textContent = view.length.toLocaleString() + ' rows';
+      tableHost.innerHTML = '';
       tableHost.appendChild(UI.table({
-        columns, rows: view, totalRow,
-        selectedRow: state.drillIdx,
-        onRowClick: (row, i) => {
-          state.drillIdx = i;
-          renderDrill(view[i]);
-        },
+        columns: liveCols.map(c => ({ key: c, label: c })),
+        rows: view, height: 540,
       }));
-
-      if (state.drillIdx != null && view[state.drillIdx]) renderDrill(view[state.drillIdx]);
-      else drillHost.innerHTML = '';
-    }
-
-    function renderDrill(picked) {
-      drillHost.innerHTML = '';
-      drillHost.appendChild(UI.sectionLabel('Property View'));
-      const matches = records.filter(r =>
-        strip(r[subCol]) === picked[subCol] && strip(r[staCol]) === picked[staCol]
-      );
-      const propIdCol = cols[0];
-      const channelIdCol = cols[3];
-      const nameCol = cols.find(c => c.toLowerCase().includes('name'));
-      const showCols = Array.from(new Set([propIdCol, channelIdCol, nameCol, subCol, staCol].filter(Boolean)));
-      drillHost.appendChild(UI.el('div', { class: 'stats' },
-        `<b>${subCol}</b>: ${UI.escapeHtml(picked[subCol])} · <b>${staCol}</b>: ${UI.escapeHtml(picked[staCol])} — ${matches.length.toLocaleString()} properties`));
-      drillHost.appendChild(UI.table({
-        columns: showCols.map(c => ({ key: c, label: c })),
-        rows: matches, height: 380,
-      }));
-      drillHost.appendChild(UI.el('button', {
+      tableHost.appendChild(UI.el('button', {
         class: 'btn btn-sm', style: 'margin-top:8px',
-        onClick: () => UI.downloadCsv(`${cfg.title.toLowerCase()}_drill.csv`, showCols, matches),
+        onClick: () => UI.downloadCsv(cfg.title.toLowerCase() + '_live.csv', liveCols, view),
       }, 'Download CSV'));
     }
 
-    redrawTable();
+    redraw();
   }
 
   // ──────────────────────────────────────────────────────────────────────────
