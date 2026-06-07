@@ -106,6 +106,9 @@
       return;
     }
 
+    const cols = payload.cols;
+    const allRecords = UI.toRecords(payload);
+
     // Exclude blank col A + churned (col fhStatusLetter)
     const colA = cols[0];
     const fhCol = cols[colIdx(cfg.fhStatusLetter)] || null;
