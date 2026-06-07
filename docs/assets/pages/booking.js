@@ -69,8 +69,7 @@
       onRefresh: async () => {
         UI.toast('Refreshing\u2026');
         try {
-          state.payload = await cfg.fetchMainFresh();
-          state.liveData = null;
+          state.payload = null;
           state.liveTab = null;
           render(target, cfgKey);
           UI.toast('Refreshed');
@@ -80,19 +79,32 @@
       },
     }));
 
-    // Data
+    // Fetch Live tab data (used by all sub-tabs)
     let payload;
     try {
-      UI.updateLoader('Loading ' + cfg.title + ' main sheet\u2026');
-      payload = state.payload || (state.payload = await cfg.fetchMain());
+      if (state.payload) {
+        payload = state.payload;
+      } else {
+        UI.updateLoader('Finding Live tab\u2026');
+        let liveTab = state.liveTab;
+        if (!liveTab) {
+          if (cfg.defaultLiveTab) {
+            liveTab = cfg.defaultLiveTab;
+          } else {
+            const tabs = await cfg.fetchTabs();
+            liveTab = (tabs.tabs || []).find(t => t.toLowerCase().includes('live')) || tabs.tabs[0];
+          }
+          state.liveTab = liveTab;
+        }
+        UI.updateLoader('Loading ' + liveTab + '\u2026');
+        payload = await cfg.fetchTab(liveTab);
+        state.payload = payload;
+      }
       UI.updateLoader('Processing ' + cfg.title + ' data\u2026');
     } catch (e) {
-      target.appendChild(UI.el('div', { class: 'splash' }, 'Could not load sheet: ' + e.message));
+      target.appendChild(UI.el('div', { class: 'splash' }, 'Could not load: ' + e.message));
       return;
     }
-
-    const cols = payload.cols;
-    const allRecords = UI.toRecords(payload);
 
     // Exclude blank col A + churned (col fhStatusLetter)
     const colA = cols[0];
@@ -128,39 +140,16 @@
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // TAB 1: Status & Tracker — shows the "Live" tab from the sheet
+  // TAB 1: Status & Tracker — raw view of the Live tab data
   // ──────────────────────────────────────────────────────────────────────────
   async function renderStatusTracker(body, cfg, state) {
-    // Find the Live tab name
-    let liveTab = state.liveTab;
-    if (!liveTab) {
-      if (cfg.defaultLiveTab) {
-        liveTab = cfg.defaultLiveTab;
-      } else {
-        try {
-          UI.updateLoader('Finding Live tab\u2026');
-          const tabs = await cfg.fetchTabs();
-          liveTab = (tabs.tabs || []).find(t => t.toLowerCase().includes('live')) || tabs.tabs[0];
-        } catch (e) {
-          body.appendChild(UI.el('div', { class: 'splash' }, 'Could not find Live tab: ' + e.message));
-          return;
-        }
-      }
-      state.liveTab = liveTab;
-    }
-
-    // Fetch Live tab data
-    let liveData;
-    try {
-      UI.updateLoader('Loading ' + liveTab + '\u2026');
-      liveData = state.liveData || (state.liveData = await cfg.fetchTab(liveTab));
-    } catch (e) {
-      body.appendChild(UI.el('div', { class: 'splash' }, 'Could not load: ' + e.message));
+    const p = state.payload;
+    if (!p) {
+      body.appendChild(UI.el('div', { class: 'splash' }, 'No data loaded.'));
       return;
     }
-
-    const liveCols = liveData.cols;
-    const liveRecords = UI.toRecords(liveData);
+    const liveCols = p.cols;
+    const liveRecords = UI.toRecords(p);
     body.appendChild(UI.stats([`<b>${liveRecords.length.toLocaleString()}</b> rows`, liveCols.length + ' columns', liveTab]));
 
     // Search + table

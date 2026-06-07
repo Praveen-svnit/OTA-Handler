@@ -18,10 +18,17 @@
   }
 
   // Preload all page data in background for instant navigation
-  setTimeout(() => {
-    Promise.allSettled([
-      API.bcom(),
-      API.gommt(),
+  setTimeout(async () => {
+    // Start by fetching tabs lists to find Live tab names
+    const [bcomTabs, gommtTabs] = await Promise.allSettled([
+      API.bcomTabs(),
+      API.gommtTabs(),
+    ]);
+    const bcomLive = (bcomTabs.value?.tabs || []).find(t => t.toLowerCase().includes('live')) || null;
+    const gommtLive = 'Live Sheet';
+    await Promise.allSettled([
+      bcomLive ? API.bcomTab(bcomLive) : Promise.resolve(),
+      gommtLive ? API.gommtTab(gommtLive) : Promise.resolve(),
       API.listing(),
       API.log(),
       API.crs(),
