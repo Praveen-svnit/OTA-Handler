@@ -16,4 +16,16 @@
   if (API.getUrl().includes('REPLACE_WITH_YOUR_DEPLOYMENT_ID')) {
     UI.toast('Edit assets/api.js and set GAS_URL before this will work.', true);
   }
+
+  // Preload all page data in background for instant navigation
+  setTimeout(() => {
+    Promise.allSettled([
+      API.bcom(),
+      API.gommt(),
+      API.listing(),
+      API.log(),
+      API.crs(),
+      API.dashboard(),
+    ]);
+  }, 300);
 })();
