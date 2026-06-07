@@ -9,7 +9,7 @@
 
 const API = (() => {
   // ── EDIT THIS after deploying Code.gs ────────────────────────────────────
-  const GAS_URL = 'https://script.google.com/macros/s/REPLACE_WITH_YOUR_DEPLOYMENT_ID/exec';
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbwy49f6Y8P7_FZgdhfRmKaIJiEsoc4AZZQXYUah3IRijKzFqmTrVTLO6WaJ5Bpxf8kBnQ/exec';
 
   const memCache = new Map();          // in-browser memory cache per session
   const inFlight = new Map();          // dedupe concurrent identical requests
