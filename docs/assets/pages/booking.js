@@ -82,24 +82,30 @@
     // Fetch Live tab data (used by all sub-tabs)
     let payload;
     try {
-      if (state.payload) {
-        payload = state.payload;
-      } else {
+      payload = state.payload;
+      if (!payload) {
         UI.updateLoader('Finding Live tab\u2026');
         let liveTab = state.liveTab;
         if (!liveTab) {
           if (cfg.defaultLiveTab) {
             liveTab = cfg.defaultLiveTab;
           } else {
-            const tabs = await cfg.fetchTabs();
-            liveTab = (tabs.tabs || []).find(t => t.trim().toLowerCase() === 'live') ||
-                      (tabs.tabs || []).find(t => t.toLowerCase().includes('live')) || tabs.tabs[0];
+            // Try exact "Live" first (avoids stale tabs cache)
+            try {
+              payload = await cfg.fetchTab('Live');
+              liveTab = 'Live';
+            } catch (_) {
+              const tabs = await cfg.fetchTabs();
+              liveTab = (tabs.tabs || []).find(t => t.toLowerCase().includes('live')) || tabs.tabs[0];
+            }
           }
           state.liveTab = liveTab;
         }
-        UI.updateLoader('Loading ' + liveTab + '\u2026');
-        payload = await cfg.fetchTab(liveTab);
-        state.payload = payload;
+        if (!payload) {
+          UI.updateLoader('Loading ' + liveTab + '\u2026');
+          payload = await cfg.fetchTab(liveTab);
+          state.payload = payload;
+        }
       }
       UI.updateLoader('Processing ' + cfg.title + ' data\u2026');
     } catch (e) {
