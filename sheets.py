@@ -20,7 +20,7 @@ def _gc():
     return gspread.service_account_from_dict(st.secrets["gcp_service_account"])
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_crs() -> pd.DataFrame:
     gc = _gc()
     wb = gc.open_by_key(CRS_SHEET_ID)
@@ -60,13 +60,13 @@ def _rows_to_df(rows):
     return pd.DataFrame(rows[1:], columns=deduped).fillna('')
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_bcom_tabs():
     """Return list of tab names in the BCOM sheet."""
     return [w.title for w in _gc().open_by_key(BCOM_SHEET_ID).worksheets()]
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_bcom_tab(tab_name: str) -> pd.DataFrame:
     """Fetch any named tab from the BCOM sheet."""
     gc = _gc()
@@ -79,7 +79,7 @@ def fetch_bcom_tab(tab_name: str) -> pd.DataFrame:
     return _rows_to_df(ws.get_all_values())
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_bcom() -> pd.DataFrame:
     """Fetch Booking.com property data from the first tab of the BCOM sheet."""
     ws = _gc().open_by_key(BCOM_SHEET_ID).get_worksheet(0)
@@ -88,12 +88,12 @@ def fetch_bcom() -> pd.DataFrame:
 
 # ── GoMMT ──────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_gommt_tabs():
     return [w.title for w in _gc().open_by_key(GOMMT_SHEET_ID).worksheets()]
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_gommt_tab(tab_name):
     gc = _gc()
     wb = gc.open_by_key(GOMMT_SHEET_ID)
@@ -105,14 +105,14 @@ def fetch_gommt_tab(tab_name):
     return _rows_to_df(ws.get_all_values())
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_gommt():
     """Fetch GoMMT property data from the first tab of the GoMMT sheet."""
     ws = _gc().open_by_key(GOMMT_SHEET_ID).get_worksheet(0)
     return _rows_to_df(ws.get_all_values())
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_dashboard() -> list:
     gc = _gc()
     ws = gc.open_by_key(DASH_SHEET_ID).worksheet(DASH_SHEET_TAB)
@@ -121,7 +121,7 @@ def fetch_dashboard() -> list:
 
 # ── Listing Tracker ────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_listing():
     """Fetch the Listing Tracker tab from the dashboard sheet by gid."""
     gc = _gc()
