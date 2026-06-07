@@ -159,51 +159,61 @@
       return;
     }
     const cols = p.cols;
-    const records = UI.toRecords(p);
-    body.appendChild(UI.stats([`<b>${records.length.toLocaleString()}</b> rows`, cols.length + ' columns', state.liveTab || '']));
+    const allRecords = UI.toRecords(p);
+    body.appendChild(UI.stats([`<b>${allRecords.length.toLocaleString()}</b> rows`, cols.length + ' columns', state.liveTab || '']));
 
     state.pivotRows = state.pivotRows || [];
     state.pivotCols = state.pivotCols || [];
     state.pivotVal = state.pivotVal || { col: cols[0] || '', agg: 'count' };
     state.pivotFilters = state.pivotFilters || {};
     state.pivotFilterCols = state.pivotFilterCols || [];
+    state._filterMS = state._filterMS || {};  // cache multiselect instances
+    state._built = false;
 
-    // Layout: left panel + main area
-    const layout = UI.el('div', { style: 'display:flex;gap:24px;align-items:flex-start' });
+    // Layout: main area + right panel
+    const flex = UI.el('div', { style: 'display:flex;gap:24px;align-items:flex-start' });
+    const mainArea = UI.el('div', { style: 'flex:1;min-width:0' });
     const side = UI.el('div', { style: 'width:260px;flex-shrink:0' });
-    const main = UI.el('div', { style: 'flex:1;min-width:0' });
-    layout.appendChild(side);
-    layout.appendChild(main);
-    body.appendChild(layout);
+    flex.appendChild(mainArea);
+    flex.appendChild(side);
+    body.appendChild(flex);
 
-    // ── Side panel ──
+    const tableHost = UI.el('div');
+    const drillHost = UI.el('div');
+    mainArea.appendChild(tableHost);
+    mainArea.appendChild(drillHost);
+
+    // ── Right panel (built once) ──
     side.appendChild(UI.el('div', { class: 'section-label' }, 'Rows'));
     const rowMS = UI.multiselect({
       label: 'Rows', options: cols, selected: state.pivotRows,
-      placeholder: 'Row columns', onChange: (v) => { state.pivotRows = v; state.drillIdx = null; refresh(); },
+      placeholder: 'Row columns',
+      onChange: (v) => { state.pivotRows = v; state.drillIdx = null; refresh(); },
     });
     side.appendChild(rowMS.el);
 
     side.appendChild(UI.el('div', { class: 'section-label', style: 'margin-top:12px' }, 'Columns'));
     const colMS = UI.multiselect({
       label: 'Cols', options: cols, selected: state.pivotCols,
-      placeholder: 'Column columns', onChange: (v) => { state.pivotCols = v; state.drillIdx = null; refresh(); },
+      placeholder: 'Column columns',
+      onChange: (v) => { state.pivotCols = v; state.drillIdx = null; rebuildFilters(); refresh(); },
     });
     side.appendChild(colMS.el);
 
     side.appendChild(UI.el('div', { class: 'section-label', style: 'margin-top:12px' }, 'Values'));
     const valRow = UI.el('div', { style: 'display:flex;gap:8px' });
     const valSel = UI.el('select', {
-      style: 'flex:1', onChange: () => { state.pivotVal.col = valSel.value; refresh(); },
+      style: 'flex:1',
+      onChange: () => { state.pivotVal.col = valSel.value; refresh(); },
     });
     cols.forEach(c => valSel.appendChild(UI.el('option', { value: c }, c)));
     valSel.value = state.pivotVal.col || cols[0] || '';
     valRow.appendChild(valSel);
-
     const aggSel = UI.el('select', {
-      style: 'width:100px', onChange: () => { state.pivotVal.agg = aggSel.value; refresh(); },
+      style: 'width:100px',
+      onChange: () => { state.pivotVal.agg = aggSel.value; refresh(); },
     });
-    ['count', 'count unique'].forEach(a => aggSel.appendChild(UI.el('option', { value: a }, a)));
+    ['count'].forEach(a => aggSel.appendChild(UI.el('option', { value: a }, a)));
     aggSel.value = state.pivotVal.agg || 'count';
     valRow.appendChild(aggSel);
     side.appendChild(valRow);
@@ -211,21 +221,35 @@
     side.appendChild(UI.el('div', { class: 'section-label', style: 'margin-top:12px' }, 'Filters'));
     const filterMS = UI.multiselect({
       label: 'Filters', options: cols, selected: state.pivotFilterCols,
-      placeholder: 'Filter columns', onChange: (v) => { state.pivotFilterCols = v; state.drillIdx = null; refresh(); },
+      placeholder: 'Filter columns',
+      onChange: (v) => { state.pivotFilterCols = v; rebuildFilters(); refresh(); },
     });
     side.appendChild(filterMS.el);
 
     const filterVals = UI.el('div');
     side.appendChild(filterVals);
 
-    // ── Main area ──
-    const tableHost = UI.el('div');
-    const drillHost = UI.el('div');
-    main.appendChild(tableHost);
-    main.appendChild(drillHost);
+    // Build filter value widgets — only called when filter columns change
+    function rebuildFilters() {
+      filterVals.innerHTML = '';
+      state._filterMS = {};
+      state.pivotFilterCols.forEach(c => {
+        const uniqueVals = Array.from(new Set(allRecords.map(r => strip(r[c])))).sort();
+        const wrap = UI.el('div', { style: 'margin-top:6px' });
+        wrap.appendChild(UI.el('div', { style: 'font-size:11px;font-weight:500;color:#52525b;margin-bottom:2px' }, c));
+        const ms = UI.multiselect({
+          label: c, options: uniqueVals, selected: state.pivotFilters[c] || [],
+          placeholder: 'All',
+          onChange: (v) => { state.pivotFilters[c] = v; state.drillIdx = null; refresh(); },
+        });
+        state._filterMS[c] = ms;
+        wrap.appendChild(ms.el);
+        filterVals.appendChild(wrap);
+      });
+    }
 
-    function currentRecords() {
-      let v = records;
+    function filteredRecords() {
+      let v = allRecords;
       state.pivotFilterCols.forEach(c => {
         const sel = state.pivotFilters[c];
         if (sel && sel.length) v = v.filter(r => sel.includes(strip(r[c])));
@@ -233,23 +257,8 @@
       return v;
     }
 
-    function renderFilterWidgets() {
-      filterVals.innerHTML = '';
-      state.pivotFilterCols.forEach(c => {
-        const vals = Array.from(new Set(records.map(r => strip(r[c])))).sort();
-        const wrap = UI.el('div', { style: 'margin-top:6px' });
-        wrap.appendChild(UI.el('div', { style: 'font-size:11px;font-weight:500;color:#52525b;margin-bottom:2px' }, c));
-        wrap.appendChild(UI.multiselect({
-          label: c, options: vals, selected: state.pivotFilters[c] || [],
-          placeholder: 'All', onChange: (v) => { state.pivotFilters[c] = v; state.drillIdx = null; refresh(); },
-        }).el);
-        filterVals.appendChild(wrap);
-      });
-    }
-
     function refresh() {
-      renderFilterWidgets();
-      const filtered = currentRecords();
+      const filtered = filteredRecords();
       const rowCols = state.pivotRows;
       const colCols = state.pivotCols;
 
@@ -259,8 +268,10 @@
         return;
       }
 
+      const agg = state.pivotVal.agg || 'count';
+
       if (!colCols.length) {
-        // Simple row grouping (no cross-tab)
+        // Simple row grouping
         const grp = new Map();
         filtered.forEach(r => {
           const k = rowCols.map(c => strip(r[c])).join('||');
@@ -274,7 +285,8 @@
         });
         view.sort((a, b) => b._count - a._count);
 
-        const totalRow = { _count: view.reduce((s, r) => s + r._count, 0) };
+        const total = view.reduce((s, r) => s + r._count, 0);
+        const totalRow = { _count: total };
         rowCols.forEach((c, i) => totalRow[c] = i === rowCols.length - 1 ? 'TOTAL' : '');
 
         const columns = rowCols.map(c => ({ key: c, label: c }))
@@ -283,9 +295,9 @@
         tableHost.innerHTML = '';
         tableHost.appendChild(UI.table({
           columns, rows: view, totalRow, selectedRow: state.drillIdx,
-          onRowClick: (row, i) => { state.drillIdx = i; renderDrillSimple(row, filtered, rowCols); },
+          onRowClick: (row, i) => { state.drillIdx = i; drillSimple(row, filtered, rowCols); },
         }));
-        if (state.drillIdx != null && view[state.drillIdx]) renderDrillSimple(view[state.drillIdx], filtered, rowCols);
+        if (state.drillIdx != null && view[state.drillIdx]) drillSimple(view[state.drillIdx], filtered, rowCols);
         else drillHost.innerHTML = '';
         return;
       }
@@ -294,9 +306,7 @@
       const rowGrp = new Map();
       const colGrp = new Map();
       const cellMap = new Map();
-
       const valCol = state.pivotVal.col || cols[0];
-      const isUnique = state.pivotVal.agg === 'count unique';
 
       filtered.forEach(r => {
         const rk = rowCols.map(c => strip(r[c])).join('||');
@@ -304,7 +314,7 @@
         rowGrp.set(rk, (rowGrp.get(rk) || 0) + 1);
         colGrp.set(ck, (colGrp.get(ck) || 0) + 1);
         const cellKey = rk + '||' + ck;
-        if (isUnique) {
+        if (agg === 'count unique') {
           if (!cellMap.has(cellKey)) cellMap.set(cellKey, new Set());
           cellMap.get(cellKey).add(strip(r[valCol]));
         } else {
@@ -312,43 +322,84 @@
         }
       });
 
-      // Build row entries
-      const rowEntries = Array.from(rowGrp.keys()).sort();
-      const colEntries = Array.from(colGrp.keys()).sort();
-      const totalByRow = new Map();
+      const rowKeys = Array.from(rowGrp.keys()).sort();
+      const colKeys = Array.from(colGrp.keys()).sort();
 
-      const rows = rowEntries.map(rk => {
+      const rows = rowKeys.map(rk => {
         const parts = rk.split('||');
         const row = {};
         rowCols.forEach((c, i) => row[c] = parts[i]);
-        colEntries.forEach(ck => {
+        let rt = 0;
+        colKeys.forEach(ck => {
           const cellKey = rk + '||' + ck;
-          const val = cellMap.get(cellKey);
-          row[ck] = isUnique ? (val ? val.size : 0) : (val || 0);
+          const v = cellMap.get(cellKey);
+          row[ck] = agg === 'count unique' ? (v ? v.size : 0) : (v || 0);
+          rt += row[ck];
         });
-        const rowTotal = colEntries.reduce((s, ck) => s + (row[ck] || 0), 0);
-        row._total = rowTotal;
-        totalByRow.set(rk, rowTotal);
+        row._total = rt;
         return row;
       });
 
-      // Column headers
-      const colHeaders = colEntries.map(ck => {
-        const parts = ck.split('||');
-        return { key: ck, label: parts.join(' · ') };
-      });
+      // Limit columns if too many
+      let displayKeys = colKeys;
+      if (colKeys.length > 60) {
+        const totals = colKeys.map(ck => ({ ck, total: rows.reduce((s, r) => s + (r[ck] || 0), 0) }));
+        totals.sort((a, b) => b.total - a.total);
+        displayKeys = totals.slice(0, 60).map(t => t.ck);
+      }
 
-      // Build table columns
-      const tableColumns = rowCols.map(c => ({ key: c, label: c }))
-        .concat(colHeaders)
+      const hdrs = rowCols.map(c => ({ key: c, label: c }))
+        .concat(displayKeys.map(k => ({ key: k, label: k.replace(/\|\|/g, ' · ').replace(/\|/g, ' · ') })))
         .concat([{ key: '_total', label: 'Total', fmt: v => v.toLocaleString(), cellClass: () => 'num' }]);
 
-      // Row total
       const grandTotal = rows.reduce((s, r) => s + r._total, 0);
       const totalRow = { _total: grandTotal };
       rowCols.forEach((c, i) => totalRow[c] = i === rowCols.length - 1 ? 'TOTAL' : '');
-      colEntries.forEach(ck => { totalRow[ck] = Array.from(totalByRow.values()).reduce((s, v) => s + v, 0); });
-      totalRow._total = grandTotal;
+      displayKeys.forEach(k => { totalRow[k] = rows.reduce((s, r) => s + (r[k] || 0), 0); });
+
+      tableHost.innerHTML = '';
+      tableHost.appendChild(UI.el('div', { class: 'stats' },
+        rows.length + ' row groups \u00d7 ' + colKeys.length + ' column groups' +
+        (colKeys.length > 60 ? ' (top 60 shown)' : '')));
+      tableHost.appendChild(UI.table({
+        columns: hdrs, rows, totalRow, selectedRow: state.drillIdx,
+        onRowClick: (row, i) => { state.drillIdx = i; drillCross(row, filtered, rowCols); },
+      }));
+
+      if (state.drillIdx != null && rows[state.drillIdx]) drillCross(rows[state.drillIdx], filtered, rowCols);
+      else drillHost.innerHTML = '';
+    }
+
+    function drillSimple(picked, filtered, rowCols) {
+      drillHost.innerHTML = '';
+      drillHost.appendChild(UI.sectionLabel('Property View'));
+      const matches = filtered.filter(r => rowCols.every(c => strip(r[c]) === picked[c]));
+      const showCols = cols.slice(0, 8);
+      drillHost.appendChild(UI.el('div', { class: 'stats' },
+        rowCols.map(c => '<b>' + UI.escapeHtml(c) + '</b>: ' + UI.escapeHtml(picked[c])).join(' \u00b7 ') +
+        ' \u2014 ' + matches.length.toLocaleString() + ' properties'));
+      drillHost.appendChild(UI.table({ columns: showCols.map(c => ({ key: c, label: c })), rows: matches, height: 380 }));
+      drillHost.appendChild(UI.el('button', { class: 'btn btn-sm', style: 'margin-top:8px',
+        onClick: () => UI.downloadCsv(cfg.title.toLowerCase() + '_drill.csv', showCols, matches) }, 'Download CSV'));
+    }
+
+    function drillCross(picked, filtered, rowCols) {
+      drillHost.innerHTML = '';
+      drillHost.appendChild(UI.sectionLabel('Property View'));
+      const matches = filtered.filter(r => rowCols.every(c => strip(r[c]) === picked[c]));
+      const showCols = cols.slice(0, 8);
+      drillHost.appendChild(UI.el('div', { class: 'stats' },
+        rowCols.map(c => '<b>' + UI.escapeHtml(c) + '</b>: ' + UI.escapeHtml(picked[c])).join(' \u00b7 ') +
+        ' \u2014 ' + matches.length.toLocaleString() + ' properties'));
+      drillHost.appendChild(UI.table({ columns: showCols.map(c => ({ key: c, label: c })), rows: matches, height: 380 }));
+      drillHost.appendChild(UI.el('button', { class: 'btn btn-sm', style: 'margin-top:8px',
+        onClick: () => UI.downloadCsv(cfg.title.toLowerCase() + '_drill.csv', showCols, matches) }, 'Download CSV'));
+    }
+
+    // Initial render
+    rebuildFilters();
+    refresh();
+  }
 
       // Filter out empty columns if too many
       let displayCols = colEntries;
