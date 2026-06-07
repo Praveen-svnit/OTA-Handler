@@ -48,14 +48,19 @@ const Router = (() => {
     setActive(page.id);
 
     const target = document.getElementById('content');
-    target.innerHTML = '<div class="splash">Loading…</div>';
+    target.innerHTML = '';
+    UI.showLoader('Loading ' + page.label + '\u2026');
 
     try {
-      Promise.resolve(page.render(target)).catch(err => {
+      Promise.resolve(page.render(target)).then(() => {
+        UI.hideLoader();
+      }).catch(err => {
+        UI.hideLoader();
         target.innerHTML = '';
         target.appendChild(UI.el('div', { class: 'splash' }, 'Failed to load: ' + err.message));
       });
     } catch (err) {
+      UI.hideLoader();
       target.innerHTML = '';
       target.appendChild(UI.el('div', { class: 'splash' }, 'Failed to load: ' + err.message));
     }

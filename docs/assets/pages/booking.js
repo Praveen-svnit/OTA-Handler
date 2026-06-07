@@ -83,7 +83,9 @@
     // Data
     let payload;
     try {
+      UI.updateLoader('Loading ' + cfg.title + ' main sheet\u2026');
       payload = state.payload || (state.payload = await cfg.fetchMain());
+      UI.updateLoader('Processing ' + cfg.title + ' data\u2026');
     } catch (e) {
       target.appendChild(UI.el('div', { class: 'splash' }, 'Could not load sheet: ' + e.message));
       return;
@@ -147,6 +149,7 @@
     // Tracker comparison (auto-fetch on first render)
     if (!state.tracker) {
       try {
+        UI.updateLoader('Loading tab list\u2026');
         state.availableTabs = state.availableTabs || await cfg.fetchTabs();
         const tabs = state.availableTabs.tabs || [];
         const liveTab = state.liveTab || cfg.defaultLiveTab ||
@@ -157,8 +160,11 @@
         state.trackerTab = trackerTab;
 
         if (liveTab && trackerTab) {
-          const liveData    = await cfg.fetchTab(liveTab);
-          const trackerData = await cfg.fetchTab(trackerTab);
+          UI.updateLoader('Comparing ' + liveTab + ' vs ' + trackerTab + '\u2026');
+          const [liveData, trackerData] = await Promise.all([
+            cfg.fetchTab(liveTab),
+            cfg.fetchTab(trackerTab),
+          ]);
           const liveRecs    = UI.toRecords(liveData);
           const trackerRecs = UI.toRecords(trackerData);
           const liveIdCol = liveData.cols[state.liveIdIdx || 0];

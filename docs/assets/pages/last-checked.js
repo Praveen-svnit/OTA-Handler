@@ -15,8 +15,10 @@
       onRefresh: async () => {
         UI.toast('Refreshing…');
         try {
-          STATE.log = await API.log({ refresh: true });
-          STATE.details = await API.details({ refresh: true });
+          [STATE.log, STATE.details] = await Promise.all([
+            API.log({ refresh: true }),
+            API.details({ refresh: true }),
+          ]);
           render(target);
           UI.toast('Refreshed');
         } catch (e) { UI.toast('Refresh failed: ' + e.message, true); }
@@ -24,8 +26,12 @@
     }));
 
     try {
-      if (!STATE.log)     STATE.log     = await API.log();
-      if (!STATE.details) STATE.details = await API.details();
+      UI.updateLoader('Loading run history\u2026');
+      [STATE.log, STATE.details] = await Promise.all([
+        STATE.log || API.log(),
+        STATE.details || API.details(),
+      ]);
+      UI.updateLoader('Rendering results\u2026');
     } catch (e) {
       target.appendChild(UI.el('div', { class: 'splash' }, 'Could not load: ' + e.message));
       return;

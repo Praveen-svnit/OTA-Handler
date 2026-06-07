@@ -24,7 +24,9 @@
 
     let payload;
     try {
+      UI.updateLoader('Loading listing data\u2026');
       payload = STATE.payload || (STATE.payload = await API.listing());
+      UI.updateLoader('Rendering listing\u2026');
     } catch (e) {
       target.appendChild(UI.el('div', { class: 'splash' }, 'Could not load: ' + e.message));
       return;

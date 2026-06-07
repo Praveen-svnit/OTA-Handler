@@ -245,6 +245,40 @@ const UI = (() => {
     });
   }
 
+  // ── Loading overlay ─────────────────────────────────────────────────────
+  let loaderCount = 0;
+
+  function showLoader(msg) {
+    loaderCount++;
+    if (loaderCount > 1) { updateLoader(msg); return; }
+    const overlay = document.createElement('div');
+    overlay.id = 'loader-overlay';
+    overlay.innerHTML =
+      '<div class="loader-bg"></div>' +
+      '<div class="loader-card">' +
+        '<div class="loader-spinner"></div>' +
+        '<div class="loader-msg">' + escapeHtml(msg || 'Loading\u2026') + '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+  }
+
+  function updateLoader(msg) {
+    const el = document.getElementById('loader-overlay');
+    if (el) {
+      const m = el.querySelector('.loader-msg');
+      if (m) m.textContent = msg || '';
+    }
+  }
+
+  function hideLoader() {
+    loaderCount = Math.max(0, loaderCount - 1);
+    if (loaderCount === 0) {
+      const el = document.getElementById('loader-overlay');
+      if (el) el.remove();
+    }
+  }
+
   return { $, $$, el, escapeHtml, toast, pageHeader, stats, sectionLabel,
-           tabsView, metricRow, multiselect, table, toolbar, downloadCsv, toRecords };
+           tabsView, metricRow, multiselect, table, toolbar, downloadCsv, toRecords,
+           showLoader, updateLoader, hideLoader };
 })();
