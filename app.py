@@ -658,12 +658,18 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         if status_col    not in cols: status_col    = None
 
         if substatus_col and status_col:
+            # Build pivot keeping ORIGINAL column names (do NOT rename to
+            # 'Sub Status' / 'Status' literally — that would break later when
+            # group_cols references the original names like 'BDC Live').
             pivot = (
-                bdf.groupby([bdf[substatus_col].str.strip(), bdf[status_col].str.strip()], dropna=False)
-                   .size().reset_index(name='Count')
+                bdf.assign(
+                    **{substatus_col: bdf[substatus_col].astype(str).str.strip(),
+                       status_col:    bdf[status_col].astype(str).str.strip()}
+                )
+                .groupby([substatus_col, status_col], dropna=False)
+                .size().reset_index(name='Count')
+                .sort_values([substatus_col, 'Count'], ascending=[True, False])
             )
-            pivot.columns = ['Sub Status', 'Status', 'Count']
-            pivot = pivot.sort_values(['Sub Status', 'Count'], ascending=[True, False])
 
             # ── Auto-fetch tracker comparison ─────────────────────────────────
             try:
@@ -745,13 +751,16 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                 live_missing = live_df_s[live_df_s[live_id_col_s].str.strip().str.lower().isin(missing_ids)].copy()
                 if substatus_col in live_missing.columns and status_col in live_missing.columns:
                     miss_grp = (
-                        live_missing.groupby(
-                            [live_missing[substatus_col].str.strip(), live_missing[status_col].str.strip()],
-                            dropna=False)
+                        live_missing.assign(
+                            **{substatus_col: live_missing[substatus_col].astype(str).str.strip(),
+                               status_col:    live_missing[status_col].astype(str).str.strip()}
+                        )
+                        .groupby([substatus_col, status_col], dropna=False)
                         .size().reset_index(name='Missing from Tracker')
                     )
-                    miss_grp.columns = ['Sub Status', 'Status', 'Missing from Tracker']
-                    display_pivot = display_pivot.merge(miss_grp, on=['Sub Status', 'Status'], how='left')
+                    display_pivot = display_pivot.merge(
+                        miss_grp, on=[substatus_col, status_col], how='left',
+                    )
                     display_pivot['Missing from Tracker'] = display_pivot['Missing from Tracker'].fillna(0).astype(int)
                 else:
                     _li = st.session_state.get(f'{prefix}_live_ids', set())
