@@ -12,85 +12,194 @@ from sheets import (
 st.set_page_config(page_title="SU Mapping Checker", layout="wide", page_icon="🔍",
                    initial_sidebar_state="expanded")
 
-# ── CSS ────────────────────────────────────────────────────────────────────────
+# ── CSS — clean professional SaaS theme ───────────────────────────────────────
 st.markdown("""
 <style>
-html, body, [class*="css"] {
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+/* ── Foundation ─────────────────────────────────────────────────────────────── */
+html, body, [class*="css"], button, input, select, textarea {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
 }
-#MainMenu, footer, header { visibility: hidden; }
-[data-testid="stDecoration"], [data-testid="stSidebarNav"] { display: none; }
+body, .stApp { background: #ffffff; color: #18181b; }
 
-/* layout */
-.block-container { padding: 1.5rem 2.5rem 2rem !important; max-width: 1400px !important; }
+/* Hide all Streamlit chrome — clean canvas */
+#MainMenu, footer, header { display: none !important; }
+[data-testid="stDecoration"], [data-testid="stSidebarNav"], [data-testid="stToolbar"] { display: none !important; }
 
-/* sidebar */
-[data-testid="stSidebar"] { background: #0f172a !important; border-right: 1px solid #1e293b !important; }
+/* Main container — generous, presentation-ready */
+.block-container {
+  padding: 1.75rem 2.5rem 2.5rem !important;
+  max-width: 1320px !important;
+}
+
+/* ── Sidebar (light, professional) ──────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+  background: #fafafa !important;
+  border-right: 1px solid #e4e4e7 !important;
+}
 [data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
 
-/* Sidebar expand toggle (when collapsed) — enlarge icon only, no layout changes */
-[data-testid="stSidebarCollapsedControl"] svg,
-[data-testid="collapsedControl"] svg,
-[data-testid="stExpandSidebarButton"] svg {
-  width: 22px !important;
-  height: 22px !important;
+/* Sidebar nav (radio) */
+[data-testid="stSidebar"] .stRadio > div { gap: 1px !important; padding: 0 10px; }
+[data-testid="stSidebar"] .stRadio label {
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #52525b !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  transition: all 0.15s;
 }
+[data-testid="stSidebar"] .stRadio label:hover { background: #f4f4f5 !important; color: #18181b !important; }
+[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+  background: #18181b !important; color: #ffffff !important; font-weight: 600 !important;
+}
+/* Hide the actual radio circle */
+[data-testid="stSidebar"] .stRadio [role="radio"] { display: none !important; }
+
+/* Sidebar collapse/expand toggles */
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"],
 [data-testid="stExpandSidebarButton"] {
-  background: #1e293b !important;
+  background: #f4f4f5 !important;
+  border: 1px solid #e4e4e7 !important;
   border-radius: 6px !important;
   padding: 6px !important;
 }
-
-/* Sidebar collapse arrow (when expanded) — bigger, more visible */
+[data-testid="stSidebarCollapsedControl"] svg,
+[data-testid="collapsedControl"] svg,
+[data-testid="stExpandSidebarButton"] svg,
 [data-testid="stSidebarCollapseButton"] svg,
 [data-testid="baseButton-headerNoPadding"] svg {
-  width: 18px !important;
-  height: 18px !important;
-  color: #cbd5e1 !important;
+  width: 18px !important; height: 18px !important; color: #52525b !important;
 }
 
-/* sidebar radio override */
-[data-testid="stSidebar"] .stRadio > div { gap: 2px !important; padding: 0 8px; }
-[data-testid="stSidebar"] .stRadio label {
-  border-radius: 6px; padding: 8px 10px; cursor: pointer;
-  color: #94a3b8 !important; font-size: 13px !important; font-weight: 500 !important;
+/* ── Typography ─────────────────────────────────────────────────────────────── */
+h1, h2 { font-weight: 600 !important; letter-spacing: -0.025em !important; color: #18181b !important; }
+h2 { font-size: 18px !important; margin: 0 0 4px !important; }
+h3 { font-size: 14px !important; font-weight: 600 !important; color: #27272a !important; margin: 8px 0 4px !important; }
+.stCaption p, [data-testid="stCaptionContainer"] p {
+  font-size: 12px !important; color: #71717a !important; font-weight: 400 !important;
 }
-[data-testid="stSidebar"] .stRadio label:has(input:checked) {
-  background: #1e293b !important; color: #f1f5f9 !important;
-}
+label p { font-size: 12px !important; color: #3f3f46 !important; font-weight: 500 !important; }
 
-/* metrics */
+/* ── Metrics (clean cards) ──────────────────────────────────────────────────── */
 [data-testid="stMetric"] {
-  background: white !important; border: 1px solid #e2e8f0 !important;
-  border-radius: 8px !important; padding: 10px 16px !important;
+  background: #ffffff !important;
+  border: 1px solid #e4e4e7 !important;
+  border-radius: 8px !important;
+  padding: 12px 16px !important;
+  box-shadow: none !important;
 }
-[data-testid="stMetricLabel"] p { font-size: 11px !important; color: #64748b !important; }
-[data-testid="stMetricValue"]   { font-size: 22px !important; font-weight: 700 !important; color: #0f172a !important; }
+[data-testid="stMetricLabel"] p { font-size: 11px !important; color: #71717a !important; font-weight: 500 !important; }
+[data-testid="stMetricValue"]   { font-size: 24px !important; font-weight: 600 !important; color: #18181b !important; letter-spacing: -0.02em !important; }
+[data-testid="stMetricDelta"]   { font-size: 11px !important; }
 
-/* tabs */
-.stTabs [data-baseweb="tab-list"] { gap: 0; border-bottom: 1px solid #e2e8f0; overflow-x: auto; flex-wrap: nowrap; }
-.stTabs [data-baseweb="tab"] { font-size: 11px !important; padding: 6px 12px !important; white-space: nowrap; font-weight: 500; }
+/* ── Tabs (Vercel-style underline) ──────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+  gap: 0 !important;
+  border-bottom: 1px solid #e4e4e7 !important;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.stTabs [data-baseweb="tab"] {
+  font-size: 13px !important;
+  padding: 8px 16px !important;
+  white-space: nowrap;
+  font-weight: 500 !important;
+  color: #71717a !important;
+  border-bottom: 2px solid transparent !important;
+  margin-bottom: -1px !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+  color: #18181b !important;
+  border-bottom: 2px solid #18181b !important;
+  font-weight: 600 !important;
+}
+.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
 
-/* expanders */
-[data-testid="stExpander"] { border: 1px solid #e2e8f0 !important; border-radius: 8px !important; background: white !important; margin-bottom: 6px !important; }
+/* ── Buttons ────────────────────────────────────────────────────────────────── */
+.stButton button, .stDownloadButton button {
+  background: #ffffff !important;
+  color: #18181b !important;
+  border: 1px solid #e4e4e7 !important;
+  border-radius: 6px !important;
+  padding: 6px 14px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+  transition: all 0.15s !important;
+}
+.stButton button:hover, .stDownloadButton button:hover {
+  background: #f4f4f5 !important;
+  border-color: #d4d4d8 !important;
+}
+.stButton button[kind="primary"] {
+  background: #18181b !important;
+  color: #ffffff !important;
+  border-color: #18181b !important;
+}
+.stButton button[kind="primary"]:hover { background: #27272a !important; border-color: #27272a !important; }
 
-/* alerts */
-[data-testid="stAlert"] { padding: 7px 12px !important; border-radius: 6px !important; }
-[data-testid="stAlert"] p { font-size: 12px !important; margin: 0 !important; }
+/* ── Inputs / selects ───────────────────────────────────────────────────────── */
+[data-baseweb="select"] > div, [data-baseweb="input"] {
+  background: #ffffff !important;
+  border: 1px solid #e4e4e7 !important;
+  border-radius: 6px !important;
+  min-height: 36px !important;
+  font-size: 13px !important;
+}
+[data-baseweb="select"] > div:hover, [data-baseweb="input"]:hover { border-color: #d4d4d8 !important; }
+[data-baseweb="select"] [role="combobox"] { font-size: 13px !important; }
 
-/* dataframe */
-[data-testid="stDataFrame"] { border: 1px solid #e2e8f0; border-radius: 6px; }
+/* ── Tags (multiselect chips) ────────────────────────────────────────────────── */
+[data-baseweb="tag"] {
+  background: #f4f4f5 !important;
+  color: #18181b !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
 
-/* caption */
-.stCaption p { font-size: 11px !important; color: #94a3b8 !important; }
+/* ── Expanders ──────────────────────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+  border: 1px solid #e4e4e7 !important;
+  border-radius: 8px !important;
+  background: #ffffff !important;
+  margin-bottom: 8px !important;
+  box-shadow: none !important;
+}
+[data-testid="stExpander"] summary { padding: 10px 14px !important; font-size: 13px !important; font-weight: 500 !important; }
+[data-testid="stExpander"] summary p { font-size: 13px !important; }
 
-/* divider */
-hr { margin: 12px 0 !important; border-color: #e2e8f0 !important; }
+/* ── Alerts (minimal, no shouting) ──────────────────────────────────────────── */
+[data-testid="stAlert"] {
+  padding: 10px 14px !important;
+  border-radius: 6px !important;
+  border: 1px solid #e4e4e7 !important;
+  background: #fafafa !important;
+}
+[data-testid="stAlert"] p { font-size: 12px !important; margin: 0 !important; color: #3f3f46 !important; }
+[data-testid="stAlert"][kind="error"] { background: #fef2f2 !important; border-color: #fecaca !important; }
+[data-testid="stAlert"][kind="error"] p { color: #991b1b !important; }
+[data-testid="stAlert"][kind="warning"] { background: #fffbeb !important; border-color: #fde68a !important; }
+[data-testid="stAlert"][kind="warning"] p { color: #92400e !important; }
+[data-testid="stAlert"][kind="success"] { background: #f0fdf4 !important; border-color: #bbf7d0 !important; }
+[data-testid="stAlert"][kind="success"] p { color: #166534 !important; }
 
-/* select label */
-label p { font-size: 12px !important; color: #374151 !important; font-weight: 500 !important; }
+/* ── DataFrame ──────────────────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+  border: 1px solid #e4e4e7 !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+/* ── Divider ────────────────────────────────────────────────────────────────── */
+hr { margin: 16px 0 !important; border: none !important; border-top: 1px solid #e4e4e7 !important; }
+
+/* Reduce excessive vertical gap from Streamlit's default block spacing */
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -390,25 +499,23 @@ def section(label):
 
 with st.sidebar:
     st.markdown("""
-    <div style="padding:20px 16px 6px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;
-                  letter-spacing:1.2px;color:#3b82f6;margin-bottom:3px">FabHotels</div>
-      <div style="font-size:15px;font-weight:700;color:#f1f5f9">Revenue Tools</div>
+    <div style="padding:22px 18px 4px">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;
+                  letter-spacing:.08em;color:#71717a;margin-bottom:2px">FabHotels</div>
+      <div style="font-size:15px;font-weight:600;color:#18181b;letter-spacing:-0.01em">Revenue Tools</div>
     </div>
-    <div style="height:1px;background:#1e293b;margin:8px 0 10px"></div>
-    <div style="padding:0 16px 6px;font-size:10px;font-weight:600;text-transform:uppercase;
-                letter-spacing:1px;color:#475569">Tools</div>
+    <div style="height:1px;background:#e4e4e7;margin:14px 0 10px"></div>
     """, unsafe_allow_html=True)
 
     page = st.radio('nav',
-                    ['📋  Booking.com', '📘  GoMMT', '📂  Listing Tracker',
-                     '📊  Mapping Checker', '🕐  Last Checked'],
+                    ['Booking.com', 'GoMMT', 'Listing Tracker',
+                     'Mapping Checker', 'Last Checked'],
                     label_visibility='collapsed')
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE: LAST CHECKED
 # ══════════════════════════════════════════════════════════════════════════════
-if page == '🕐  Last Checked':
+if page == 'Last Checked':
     st.markdown('## Last Checked')
     st.caption('Full results of every saved run — shared across all users')
     st.divider()
@@ -469,18 +576,14 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
       'sub_status_letter': 'F',     # column letter for Sub Status
     }
     """
-    # ── Compact header: title left, refresh button right ─────────────────────
-    _h1, _h2 = st.columns([8, 1])
+    # ── Header ───────────────────────────────────────────────────────────────
+    _h1, _h2 = st.columns([7, 1])
     with _h1:
-        st.markdown(
-            f'<div style="display:flex;align-items:baseline;gap:10px;margin:0 0 2px">'
-            f'<div style="font-size:20px;font-weight:700;color:#0f172a;letter-spacing:-0.01em">{channel_name}</div>'
-            f'<div style="font-size:11px;color:#64748b">Status · Substatus · Hygiene</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'## {channel_name}')
+        st.caption('Property status, substatus and hygiene checks')
     with _h2:
-        if st.button('🔄 Refresh', use_container_width=True, key=f'{prefix}_refresh'):
+        st.write('')
+        if st.button('Refresh', use_container_width=True, key=f'{prefix}_refresh'):
             fetch_main.clear()
 
     try:
@@ -534,27 +637,11 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     bdf, blank_a_cnt, churn_cnt = _apply_exclusions(bdf, fh_idx, prefix, _fingerprint)
     cols = list(bdf.columns)
 
-    # ── Compact stats row (chip-style, Next.js feel) ─────────────────────────
-    _chips = (
-        f'<span style="background:#ecfdf5;color:#047857;font-size:11px;font-weight:600;'
-        f'padding:3px 9px;border-radius:6px;margin-right:6px">'
-        f'<b>{len(bdf):,}</b> active</span>'
-        f'<span style="background:#f1f5f9;color:#475569;font-size:11px;font-weight:500;'
-        f'padding:3px 9px;border-radius:6px;margin-right:6px">{len(cols)} cols</span>'
-    )
-    if blank_a_cnt:
-        _chips += (
-            f'<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:500;'
-            f'padding:3px 9px;border-radius:6px;margin-right:6px">'
-            f'{blank_a_cnt:,} blank Col A</span>'
-        )
-    if churn_cnt:
-        _chips += (
-            f'<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:500;'
-            f'padding:3px 9px;border-radius:6px">'
-            f'{churn_cnt:,} churned (Col {fh_letter})</span>'
-        )
-    st.markdown(f'<div style="margin:-4px 0 10px">{_chips}</div>', unsafe_allow_html=True)
+    # ── Clean stats row ──────────────────────────────────────────────────────
+    _stats = [f'**{len(bdf):,}** active', f'{len(cols)} columns']
+    if blank_a_cnt: _stats.append(f'{blank_a_cnt:,} blank Col A excluded')
+    if churn_cnt:   _stats.append(f'{churn_cnt:,} churned excluded')
+    st.caption(' · '.join(_stats))
 
     # ── Pre-compute hygiene data (cached — runs once per data fetch) ─────────
     sub_idx = col_idx(cfg['sub_status_letter'])
@@ -959,22 +1046,13 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
 
                 _detail = bdf.loc[_drill_mask.values, _show]
 
-                st.markdown(
-                    '<div style="margin-top:14px;font-size:11px;font-weight:600;color:#64748b;'
-                    'text-transform:uppercase;letter-spacing:.5px">Property View</div>',
-                    unsafe_allow_html=True,
-                )
-                _chips = ' '.join(
-                    f'<span style="background:#eff6ff;color:#1e40af;font-size:11px;'
-                    f'padding:2px 8px;border-radius:10px;margin-right:4px">'
-                    f'{gc}: <b>{_picked[gc]}</b></span>' for gc in group_cols
-                )
-                st.markdown(f'<div style="margin:6px 0 8px">{_chips}</div>', unsafe_allow_html=True)
-                st.caption(f'{len(_detail):,} properties')
+                st.markdown('###### Property View')
+                _selection_summary = ' · '.join(f'**{gc}**: {_picked[gc]}' for gc in group_cols)
+                st.caption(_selection_summary + f' — {len(_detail):,} properties')
                 st.dataframe(_detail, use_container_width=True, hide_index=True, height=380)
                 st.download_button(
-                    '⬇️ Download', _detail.to_csv(index=False).encode('utf-8'),
-                    file_name=f'{prefix}_pivot_drill.csv', mime='text/csv',
+                    'Download CSV', _detail.to_csv(index=False).encode('utf-8'),
+                    file_name=f'{prefix}_drill.csv', mime='text/csv',
                     key=f'dl_{prefix}_piv_drill',
                 )
 
@@ -1527,10 +1605,10 @@ _GOMMT_CFG = {
 }
 
 # ── Dispatch to channel page ──────────────────────────────────────────────────
-if page == '📋  Booking.com':
+if page == 'Booking.com':
     _render_channel_page('Booking.com', 'bcom', fetch_bcom, fetch_bcom_tabs, fetch_bcom_tab, _BCOM_CFG)
     st.stop()
-elif page == '📘  GoMMT':
+elif page == 'GoMMT':
     _render_channel_page('GoMMT', 'gommt', fetch_gommt, fetch_gommt_tabs, fetch_gommt_tab, _GOMMT_CFG)
     st.stop()
 
@@ -1538,26 +1616,21 @@ elif page == '📘  GoMMT':
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE: LISTING TRACKER
 # ══════════════════════════════════════════════════════════════════════════════
-if page == '📂  Listing Tracker':
-    # Compact Next.js-style header
-    _h1, _h2 = st.columns([8, 1])
+if page == 'Listing Tracker':
+    _h1, _h2 = st.columns([7, 1])
     with _h1:
-        st.markdown(
-            '<div style="display:flex;align-items:baseline;gap:10px;margin:0 0 2px">'
-            '<div style="font-size:20px;font-weight:700;color:#0f172a;letter-spacing:-0.01em">Listing Tracker</div>'
-            '<div style="font-size:11px;color:#64748b">Property listing data from the dashboard sheet</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('## Listing Tracker')
+        st.caption('Property listing data from the dashboard sheet')
     with _h2:
-        if st.button('🔄 Refresh', use_container_width=True, key='listing_refresh'):
+        st.write('')
+        if st.button('Refresh', use_container_width=True, key='listing_refresh'):
             fetch_listing.clear()
 
     try:
-        with st.spinner('Loading Listing Tracker…'):
+        with st.spinner('Loading…'):
             ldf = fetch_listing()
     except Exception as e:
-        st.error(f'Could not load Listing Tracker: {e}')
+        st.error(f'Could not load: {e}')
         st.info('Make sure the service account has Viewer access to the dashboard sheet.')
         st.stop()
 
@@ -1566,18 +1639,7 @@ if page == '📂  Listing Tracker':
         st.stop()
 
     _lcols = list(ldf.columns)
-
-    # Chip stats
-    st.markdown(
-        f'<div style="margin:-4px 0 10px">'
-        f'<span style="background:#ecfdf5;color:#047857;font-size:11px;font-weight:600;'
-        f'padding:3px 9px;border-radius:6px;margin-right:6px">'
-        f'<b>{len(ldf):,}</b> rows</span>'
-        f'<span style="background:#f1f5f9;color:#475569;font-size:11px;font-weight:500;'
-        f'padding:3px 9px;border-radius:6px">{len(_lcols)} cols</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+    st.caption(f'**{len(ldf):,}** rows · {len(_lcols)} columns')
 
     # Filters + search row
     fcol, scol = st.columns([3, 5])
@@ -1635,7 +1697,7 @@ if page == '📂  Listing Tracker':
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Hard guard: if we got here while on a non-Mapping page, do nothing
-if page != '📊  Mapping Checker':
+if page != 'Mapping Checker':
     st.stop()
 
 # Header
@@ -1644,10 +1706,7 @@ with hdr1:
     st.markdown('## Mapping Checker')
     st.caption('Validates SU channel manager data against CRS & Prop Level Dashboard')
 with hdr2:
-    st.markdown('<div style="text-align:right;padding-top:14px">'
-                '<span style="background:#eff6ff;color:#2563eb;font-size:10px;font-weight:600;'
-                'padding:3px 10px;border-radius:10px">FabHotels Internal</span></div>',
-                unsafe_allow_html=True)
+    st.write('')
 
 st.divider()
 
