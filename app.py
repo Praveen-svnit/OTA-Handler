@@ -23,9 +23,14 @@ html, body, [class*="css"], button, input, select, textarea {
 }
 body, .stApp { background: #ffffff; color: #18181b; }
 
-/* Hide all Streamlit chrome — clean canvas */
-#MainMenu, footer, header { display: none !important; }
-[data-testid="stDecoration"], [data-testid="stSidebarNav"], [data-testid="stToolbar"] { display: none !important; }
+/* Hide Streamlit chrome — but KEEP the sidebar toggle accessible */
+#MainMenu, footer { display: none !important; }
+[data-testid="stDecoration"], [data-testid="stSidebarNav"] { display: none !important; }
+/* Hide the deploy button + status indicator inside the toolbar, NOT the whole toolbar */
+[data-testid="stToolbar"] [data-testid="stDeployButton"],
+[data-testid="stToolbar"] [data-testid="stStatusWidget"] { display: none !important; }
+[data-testid="stToolbar"] { background: transparent !important; padding-right: 6px !important; }
+header[data-testid="stHeader"] { background: transparent !important; height: auto !important; }
 
 /* Main container — generous, presentation-ready */
 .block-container {
@@ -489,9 +494,12 @@ def show_table(data, key):
                        key=f'dl_{key}')
 
 def section(label):
-    st.markdown(f'<p style="font-size:11px;font-weight:700;text-transform:uppercase;'
-                f'letter-spacing:.6px;color:#94a3b8;margin:16px 0 6px">{label}</p>',
-                unsafe_allow_html=True)
+    # Clean section heading — no shouty caps, subtle color
+    st.markdown(
+        f'<p style="font-size:13px;font-weight:600;color:#27272a;margin:18px 0 6px;'
+        f'letter-spacing:-0.005em">{label}</p>',
+        unsafe_allow_html=True,
+    )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR
@@ -691,7 +699,7 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
     # ── Sub-page tabs ─────────────────────────────────────────────────────────
     _mx_label = '-'.join(cfg.get('matrix_letters', ('E', 'F', 'L', 'M')))
     bcom_tab1, bcom_tab2, bcom_tab3, bcom_tab4 = st.tabs(
-        ['📊 Status & Tracker', '🧹 Hygiene Checks', '📋 Value Summaries', f'🗂 {_mx_label} Matrix']
+        ['Status & Tracker', 'Hygiene Checks', 'Value Summaries', f'{_mx_label} Matrix']
     )
 
     # Each tab is wrapped in @st.fragment so a click inside one tab does NOT
@@ -722,7 +730,7 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
         substatus_col = _sub_default
         status_col    = _sta_default
 
-        with st.expander('⚙️ Column configuration',
+        with st.expander('Column configuration',
                          expanded=(substatus_col is None or status_col is None)):
             cc1, cc2 = st.columns(2)
             with cc1:
@@ -1070,7 +1078,7 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
                 tm3.metric('Missing',      f'{_ms_ct:,}',
                            delta=f'-{_ms_ct}' if _ms_ct else None, delta_color='inverse')
 
-                with st.expander('⚙️ Change comparison tabs / ID columns', expanded=False):
+                with st.expander('Change comparison tabs / ID columns', expanded=False):
                     tc1, tc2 = st.columns(2)
                     with tc1:
                         new_live = st.selectbox('Live Properties tab', available_tabs,
@@ -1551,7 +1559,7 @@ def _render_channel_page(channel_name, prefix, fetch_main, fetch_tabs_fn, fetch_
             # Customization UI lives here so it only appears on the Hygiene page.
             # Rendered OUTSIDE the fragment so changes trigger a full app rerun
             # (which recomputes hyg_cols at the top and updates all tabs).
-            with st.expander('⚙️ Customize hygiene check columns', expanded=False):
+            with st.expander('Customize hygiene check columns', expanded=False):
                 _cc1, _cc2 = st.columns(2)
                 with _cc1:
                     st.multiselect(
