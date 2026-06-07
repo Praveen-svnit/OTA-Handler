@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OTA Tracker — FabHotels</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="brand">
+    <div class="brand-eyebrow">FabHotels</div>
+    <div class="brand-name">Revenue Tools</div>
+  </div>
+  <nav id="nav"></nav>
+</aside>
+
+<main id="app">
+  <div id="content">
+    <div class="splash">Loading…</div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<!-- Modules (load order matters) -->
+<script src="assets/api.js"></script>
+<script src="assets/ui.js"></script>
+<script src="assets/router.js"></script>
+<script src="assets/pages/booking.js"></script>
+<script src="assets/pages/gommt.js"></script>
+<script src="assets/pages/listing.js"></script>
+<script src="assets/pages/last-checked.js"></script>
+<script src="assets/pages/mapping.js"></script>
+<script src="assets/app.js"></script>
+
+</body>
+</html>

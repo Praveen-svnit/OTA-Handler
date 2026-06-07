@@ -1,0 +1,180 @@
+/**
+ * OTA Handler — Google Apps Script backend
+ *
+ * Deploy as Web App:
+ *   - Execute as: Me (the script owner — you)
+ *   - Who has access: Anyone (the HTML page will call this URL)
+ *
+ * The team does NOT need direct sheet access. This script reads sheets using
+ * the script owner's identity, then returns JSON to the browser.
+ *
+ * Endpoints (all GET via doGet):
+ *   ?action=ping                       → { ok: true }
+ *   ?action=bcom                       → first tab of BCOM_SHEET as { cols, rows }
+ *   ?action=bcom_tabs                  → { tabs: [name, ...] }
+ *   ?action=bcom_tab&name=Live         → named tab as { cols, rows }
+ *   ?action=gommt / gommt_tabs / gommt_tab → same shape, GoMMT sheet
+ *   ?action=listing                    → Listing Tracker (gid 158406294) as { cols, rows }
+ *   ?action=crs                        → CRS DATA tab as { cols, rows }
+ *   ?action=dashboard                  → Prop Level Dashboard as { rows } (raw 2-D)
+ *   ?action=log                        → Last Checked summary as { cols, rows }
+ *   ?action=details                    → Last Run Details as { cols, rows }
+ *
+ * Cache: 1 hour via Apps Script CacheService. Add &refresh=1 to bypass.
+ */
+
+// ── Sheet IDs (mirror sheets.py constants) ─────────────────────────────────
+const CRS_SHEET_ID    = '1H2lP2zn4Ydeyex504DzmfBwXAX0Ip2H4SIu92DylRLw';
+const BCOM_SHEET_ID   = '1vjm8BX1QZKMqXiLjbokCD0R91JvlscXcg5812p_IolI';
+const GOMMT_SHEET_ID  = '1Pr2iEC7UvI7sWgwx4qQGQcO9Iw3dyzBqLpAr2mrQvKc';
+const DASH_SHEET_ID   = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU';
+const LISTING_GID     = 158406294;
+
+const CRS_TAB         = 'CRS DATA';
+const DASH_TAB        = 'Prop Level Dashboard';
+const LOG_TAB         = 'Last Checked';
+const DETAIL_TAB      = 'Last Run Details';
+
+const CACHE_TTL_S     = 3600;   // 1 hour
+
+// ── Entry point ────────────────────────────────────────────────────────────
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  const action = p.action || 'ping';
+  const refresh = p.refresh === '1' || p.refresh === 'true';
+
+  try {
+    const result = route(action, p, refresh);
+    return jsonResponse({ ok: true, data: result });
+  } catch (err) {
+    return jsonResponse({ ok: false, error: String(err && err.message || err) });
+  }
+}
+
+// ── Router ─────────────────────────────────────────────────────────────────
+function route(action, p, refresh) {
+  switch (action) {
+    case 'ping':        return { time: new Date().toISOString() };
+
+    case 'bcom':        return cachedSheetFirstTab('bcom', BCOM_SHEET_ID, refresh);
+    case 'bcom_tabs':   return cachedTabList('bcom_tabs', BCOM_SHEET_ID, refresh);
+    case 'bcom_tab':    return cachedSheetNamedTab('bcom_tab', BCOM_SHEET_ID, p.name, refresh);
+
+    case 'gommt':       return cachedSheetFirstTab('gommt', GOMMT_SHEET_ID, refresh);
+    case 'gommt_tabs':  return cachedTabList('gommt_tabs', GOMMT_SHEET_ID, refresh);
+    case 'gommt_tab':   return cachedSheetNamedTab('gommt_tab', GOMMT_SHEET_ID, p.name, refresh);
+
+    case 'listing':     return cachedSheetByGid('listing', DASH_SHEET_ID, LISTING_GID, refresh);
+
+    case 'crs':         return cachedSheetByName('crs', CRS_SHEET_ID, CRS_TAB, refresh);
+    case 'dashboard':   return cachedSheetByNameRaw('dashboard', DASH_SHEET_ID, DASH_TAB, refresh);
+
+    case 'log':         return cachedSheetByName('log', CRS_SHEET_ID, LOG_TAB, refresh);
+    case 'details':     return cachedSheetByName('details', CRS_SHEET_ID, DETAIL_TAB, refresh);
+
+    default:
+      throw new Error('Unknown action: ' + action);
+  }
+}
+
+// ── Cached sheet readers ────────────────────────────────────────────────────
+function cachedTabList(cacheKey, sheetId, refresh) {
+  return withCache(cacheKey, refresh, () => {
+    const ss = SpreadsheetApp.openById(sheetId);
+    return { tabs: ss.getSheets().map(s => s.getName()) };
+  });
+}
+
+function cachedSheetFirstTab(cacheKey, sheetId, refresh) {
+  return withCache(cacheKey, refresh, () => {
+    const ss = SpreadsheetApp.openById(sheetId);
+    const ws = ss.getSheets()[0];
+    return sheetToColsRows(ws);
+  });
+}
+
+function cachedSheetNamedTab(cacheKey, sheetId, tabName, refresh) {
+  if (!tabName) throw new Error('Missing tab name');
+  const key = cacheKey + '_' + tabName;
+  return withCache(key, refresh, () => {
+    const ss = SpreadsheetApp.openById(sheetId);
+    const ws = ss.getSheetByName(tabName);
+    if (!ws) {
+      const available = ss.getSheets().map(s => s.getName());
+      throw new Error('Tab "' + tabName + '" not found. Available: ' + available.join(', '));
+    }
+    return sheetToColsRows(ws);
+  });
+}
+
+function cachedSheetByName(cacheKey, sheetId, tabName, refresh) {
+  return cachedSheetNamedTab(cacheKey, sheetId, tabName, refresh);
+}
+
+function cachedSheetByNameRaw(cacheKey, sheetId, tabName, refresh) {
+  return withCache(cacheKey, refresh, () => {
+    const ss = SpreadsheetApp.openById(sheetId);
+    const ws = ss.getSheetByName(tabName);
+    if (!ws) throw new Error('Tab "' + tabName + '" not found.');
+    return { rows: ws.getDataRange().getValues() };   // raw 2-D array
+  });
+}
+
+function cachedSheetByGid(cacheKey, sheetId, gid, refresh) {
+  return withCache(cacheKey, refresh, () => {
+    const ss = SpreadsheetApp.openById(sheetId);
+    const sheets = ss.getSheets();
+    let target = null;
+    for (let i = 0; i < sheets.length; i++) {
+      if (sheets[i].getSheetId() === gid) { target = sheets[i]; break; }
+    }
+    if (!target) {
+      const available = sheets.map(s => '[' + s.getSheetId() + '] ' + s.getName());
+      throw new Error('Tab with gid ' + gid + ' not found. Available: ' + available.join(', '));
+    }
+    return sheetToColsRows(target);
+  });
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function sheetToColsRows(ws) {
+  const all = ws.getDataRange().getValues();
+  if (!all || all.length === 0) return { cols: [], rows: [] };
+  const headers = all[0].map(h => String(h == null ? '' : h));
+  // Deduplicate headers (mirrors sheets.py _rows_to_df behaviour)
+  const seen = {};
+  const cols = headers.map(h => {
+    if (seen[h] == null) { seen[h] = 0; return h; }
+    seen[h] += 1;
+    return h + '.' + seen[h];
+  });
+  const rows = all.slice(1).map(r => r.map(v => v == null ? '' : v));
+  return { cols: cols, rows: rows };
+}
+
+function withCache(key, refresh, fn) {
+  const cache = CacheService.getScriptCache();
+  if (!refresh) {
+    const hit = cache.get(key);
+    if (hit) {
+      try { return JSON.parse(hit); } catch (_) { /* fall through */ }
+    }
+  }
+  const result = fn();
+  try { cache.put(key, JSON.stringify(result), CACHE_TTL_S); } catch (_) { /* >100KB ignored */ }
+  return result;
+}
+
+function jsonResponse(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Manual smoke test (run from the GAS editor) ────────────────────────────
+function _smokeTest() {
+  Logger.log(route('ping', {}, false));
+  Logger.log(route('bcom_tabs', {}, false));
+  const bcom = route('bcom', {}, false);
+  Logger.log('bcom cols: ' + bcom.cols.length + ', rows: ' + bcom.rows.length);
+}

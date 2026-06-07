@@ -1,0 +1,71 @@
+/**
+ * Hash-based router. Pages register themselves; navigation is instant.
+ */
+
+const Router = (() => {
+  const pages = [];     // { id, label, render(target) }
+  let currentId = null;
+
+  function register(page) {
+    pages.push(page);
+  }
+
+  function buildNav() {
+    const nav = document.getElementById('nav');
+    nav.innerHTML = '';
+    pages.forEach(p => {
+      const a = document.createElement('a');
+      a.href = '#/' + p.id;
+      a.textContent = p.label;
+      a.dataset.id = p.id;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        navigate(p.id);
+      });
+      nav.appendChild(a);
+    });
+  }
+
+  function setActive(id) {
+    document.querySelectorAll('#nav a').forEach(a => {
+      a.classList.toggle('active', a.dataset.id === id);
+    });
+  }
+
+  function navigate(id) {
+    if (!pages.some(p => p.id === id)) id = pages[0].id;
+    window.location.hash = '#/' + id;
+  }
+
+  function render() {
+    const hash = window.location.hash || '';
+    const m = hash.match(/^#\/([\w-]+)/);
+    const id = (m && m[1]) || pages[0].id;
+    const page = pages.find(p => p.id === id) || pages[0];
+
+    if (currentId === page.id) return;   // already showing
+    currentId = page.id;
+    setActive(page.id);
+
+    const target = document.getElementById('content');
+    target.innerHTML = '<div class="splash">Loading…</div>';
+
+    try {
+      Promise.resolve(page.render(target)).catch(err => {
+        target.innerHTML = '';
+        target.appendChild(UI.el('div', { class: 'splash' }, 'Failed to load: ' + err.message));
+      });
+    } catch (err) {
+      target.innerHTML = '';
+      target.appendChild(UI.el('div', { class: 'splash' }, 'Failed to load: ' + err.message));
+    }
+  }
+
+  function start() {
+    buildNav();
+    window.addEventListener('hashchange', () => { currentId = null; render(); });
+    render();
+  }
+
+  return { register, navigate, start };
+})();
