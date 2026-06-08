@@ -30,14 +30,15 @@ picks up the next queued job automatically — there are no per-person names. Th
 
 ## One-time setup
 
-1. **Install Python 3.11+** (tick "Add Python to PATH" during install).
+1. **Have Python installed.** Anaconda is auto-detected (the common install
+   paths) — no need to add Python to PATH. If you use a different Python, edit
+   the `PY=` line near the top of `start-worker.bat`.
 2. Get this folder onto your PC (zip or `git clone`).
 3. Copy `.env.example` to `.env` and fill in just two values (same for everyone):
    - `GAS_URL` = the Apps Script web-app URL (ends in `/exec`; ask your admin).
    - `WORKER_TOKEN` = the shared token (ask your admin).
-4. Double-click **`start-worker.bat`** once — the first run creates a virtual
-   environment, installs dependencies, and downloads the browser engine. (Later
-   runs start instantly.)
+4. Double-click **`start-worker.bat`** once — the first run installs dependencies
+   and downloads the browser engine (~1–2 min). Later runs start instantly.
 
 ## Daily use
 
