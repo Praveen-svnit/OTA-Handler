@@ -1,17 +1,18 @@
 /**
- * Mapping Checker — placeholder.
+ * Mapping Checker (Phase 2).
  *
- * This is the largest single page (the SU-mapping-validation engine). The
- * good news: you already have a fully-working static HTML version at
- * C:\Users\cs03778\su-mapping-checker.html with all 12 check implementations
- * in vanilla JS.
+ * The full 12-check SU-mapping validation engine lives in the standalone
+ * file at /docs/su-mapping-checker.html — already 1,100+ lines of working
+ * vanilla JS with its own CSS, stepper UI, table rendering, and Excel export.
  *
- * Phase 2 of the migration ports that file into this module — replacing its
- * inline JSONP gviz calls with API.crs() / API.dashboard() from api.js.
+ * Rather than rewrite all of that to use our shared UI helpers, we embed it
+ * as an iframe inside the SPA shell. The standalone file was modified to:
+ *   - load assets/api.js  (so it can reach the GAS proxy)
+ *   - replace its gviz JSONP fetches with API.crs() / API.dashboard()
+ * so it now uses the same service-account-backed data path as the rest of
+ * the app. The team needs zero direct Google Sheet access.
  *
- * For now this page just shows a placeholder so the navigation works and the
- * other 4 pages (Booking.com, GoMMT, Listing Tracker, Last Checked) are
- * usable as a Phase-1 POC.
+ * Phase 3 would rewrite this in our component style; not worth it today.
  */
 
 (function () {
@@ -21,22 +22,27 @@
     target.appendChild(UI.pageHeader({
       title: 'Mapping Checker',
       subtitle: 'SU channel-manager mapping validation',
+      onRefresh: () => {
+        const f = document.getElementById('mapping-frame');
+        if (f) f.src = f.src;   // simple iframe reload
+      },
     }));
 
-    const card = UI.el('div', {
-      style: 'border:1px solid #e4e4e7;border-radius:8px;padding:24px;background:#fafafa;text-align:center;color:#52525b;font-size:13px',
+    // Iframe fills the remaining viewport height. Border/radius match other
+    // page containers for visual consistency.
+    const wrap = UI.el('div', {
+      style: 'border:1px solid #e4e4e7;border-radius:8px;overflow:hidden;'
+           + 'height:calc(100vh - 130px);background:#ffffff',
     });
-    card.innerHTML = `
-      <div style="font-size:32px;margin-bottom:8px">⚙️</div>
-      <div style="font-weight:600;color:#27272a;margin-bottom:6px">Coming in Phase 2</div>
-      <div>The Mapping Checker port is ~80% done — the 12-check validation engine
-      from <code>su-mapping-checker.html</code> drops in here with minor adjustments to
-      use the new API client.</div>
-      <div style="margin-top:14px">
-        <a href="../../su-mapping-checker.html" class="btn">Open standalone version</a>
-      </div>
-    `;
-    target.appendChild(card);
+    const iframe = UI.el('iframe', {
+      id: 'mapping-frame',
+      src: 'su-mapping-checker.html',
+      style: 'width:100%;height:100%;border:none;display:block',
+      sandbox: 'allow-scripts allow-same-origin allow-downloads allow-forms',
+      title: 'Mapping Checker',
+    });
+    wrap.appendChild(iframe);
+    target.appendChild(wrap);
   }
 
   window.PAGE_MAPPING = {

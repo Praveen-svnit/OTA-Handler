@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SU Mapping Checker</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Shared API client (talks to the GAS proxy so users don't need direct sheet access) -->
+<script src="assets/api.js"></script>
+<style>
+:root {
+  --blue: #1a56db; --blue-lt: #e8f0fe;
+  --green: #0f9d58; --green-lt: #e6f4ea;
+  --red: #d93025; --red-lt: #fce8e6;
+  --amber: #e37400; --amber-lt: #fef3e2;
+  --purple: #7b1fa2; --purple-lt: #f3e5f5;
+  --teal: #00796b; --teal-lt: #e0f2f1;
+  --border: #dadce0; --bg: #f0f2f5; --text: #202124; --muted: #5f6368;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+header { background: white; border-bottom: 1px solid var(--border); padding: 14px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.1); display: flex; justify-content: space-between; align-items: center; }
+header h1 { font-size: 18px; font-weight: 700; color: var(--blue); }
+header p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.tag { background: var(--blue-lt); color: var(--blue); font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 10px; }
+
+.main { max-width: 1140px; margin: 0 auto; padding: 20px; }
+
+/* STEPPER */
+.stepper { background: white; border-radius: 8px; padding: 14px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.1); display: flex; align-items: center; }
+.step { display: flex; align-items: center; gap: 8px; }
+.sc { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; transition: all .2s; }
+.step.pending .sc { background: #e8eaed; color: var(--muted); }
+.step.active .sc  { background: var(--blue); color: white; }
+.step.done .sc    { background: var(--green); color: white; }
+.sl { font-size: 13px; font-weight: 500; }
+.step.pending .sl { color: var(--muted); }
+.step.active .sl  { color: var(--blue); font-weight: 600; }
+.step.done .sl    { color: var(--green); }
+.sline { flex: 1; height: 2px; background: #e8eaed; margin: 0 10px; min-width: 30px; transition: background .2s; }
+.sline.done { background: var(--green); }
+
+/* CARD */
+.card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); padding: 22px 24px; margin-bottom: 18px; }
+.card-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.hint { font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
+
+/* UPLOAD */
+.upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.uzone { border: 2px dashed var(--border); border-radius: 8px; padding: 26px 16px; text-align: center; cursor: pointer; transition: all .2s; position: relative; }
+.uzone:hover, .uzone.drag { border-color: var(--blue); background: var(--blue-lt); }
+.uzone.done { border-color: var(--green); background: var(--green-lt); border-style: solid; }
+.uzone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.uzone h3 { font-size: 13px; font-weight: 600; margin: 8px 0 4px; }
+.uzone p { font-size: 12px; color: var(--muted); }
+.uicon { font-size: 26px; }
+.fbadge { margin-top: 10px; background: rgba(0,0,0,.05); border-radius: 6px; padding: 8px 10px; text-align: left; font-size: 12px; display: none; }
+.fbadge strong { display: block; font-weight: 600; word-break: break-all; margin-bottom: 2px; }
+
+/* FORM */
+select, input[type=text] { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; width: 100%; background: white; color: var(--text); }
+select:focus, input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-lt); }
+.form-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; align-items: center; margin-bottom: 8px; }
+.form-row label { font-size: 13px; font-weight: 500; }
+.form-section { margin-bottom: 20px; }
+.form-section h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.field-note { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* BUTTONS */
+.btn { padding: 7px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all .15s; }
+.btn-blue { background: var(--blue); color: white; } .btn-blue:hover:not(:disabled) { background: #1144b5; }
+.btn-blue:disabled { background: #ccc; cursor: not-allowed; }
+.btn-out { background: white; color: var(--blue); border: 1px solid var(--blue); } .btn-out:hover { background: var(--blue-lt); }
+.btn-green { background: var(--green); color: white; } .btn-green:hover { background: #0b8043; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+.actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.actions-sb { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; }
+
+/* STATS */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.stat { background: white; border-radius: 8px; padding: 14px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.1); border-top: 3px solid; cursor: pointer; transition: all .15s; }
+.stat:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,.15); }
+.stat.active { outline: 2px solid currentColor; }
+.stat.s0 { border-color: var(--muted);   color: var(--muted);   }
+.stat.s1 { border-color: var(--red);     color: var(--red);     }
+.stat.s2 { border-color: var(--amber);   color: var(--amber);   }
+.stat.s3 { border-color: var(--purple);  color: var(--purple);  }
+.stat.s4 { border-color: var(--blue);    color: var(--blue);    }
+.stat.s5 { border-color: var(--teal);    color: var(--teal);    }
+.stat.s6 { border-color: var(--green);   color: var(--green);   }
+.stat-n { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.stat-l { font-size: 11px; font-weight: 500; margin-top: 3px; }
+
+/* TABLE */
+.tbl-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 8px; max-height: 460px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead { position: sticky; top: 0; z-index: 1; }
+th { background: #f8f9fa; padding: 9px 12px; text-align: left; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; font-size: 11px; }
+td { padding: 7px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #fafafa; }
+td.bad { background: #fff0f0; color: var(--red); font-weight: 500; }
+td.warn { background: #fff8e1; }
+td.ok { color: var(--green); }
+td.mono { font-family: monospace; font-size: 11px; color: #555; }
+
+.badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.b-red  { background: var(--red-lt);    color: var(--red);    }
+.b-amb  { background: var(--amber-lt);  color: var(--amber);  }
+.b-pur  { background: var(--purple-lt); color: var(--purple); }
+.b-blue { background: var(--blue-lt);   color: var(--blue);   }
+.b-teal { background: var(--teal-lt);   color: var(--teal);   }
+.b-grn  { background: var(--green-lt);  color: var(--green);  }
+
+/* TOOLBAR */
+.toolbar { display: flex; gap: 10px; margin-bottom: 12px; }
+.toolbar input { flex: 1; }
+.empty { text-align: center; padding: 36px; color: var(--muted); font-size: 13px; }
+.pgn { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.pgn button { padding: 3px 10px; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.pgn button:disabled { opacity: .4; cursor: default; }
+.pgn button:not(:disabled):hover { background: #f0f0f0; }
+
+.pane { display: none; } .pane.on { display: block; }
+
+/* Sheet selector */
+.sh-sel { display: none; margin-top: 8px; }
+.sh-sel label { font-size: 11px; font-weight: 600; display: block; margin-bottom: 3px; }
+
+/* Info box */
+.infobox { background: var(--blue-lt); border-left: 3px solid var(--blue); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 12px; color: #1a3a7a; margin-bottom: 16px; line-height: 1.6; }
+.infobox strong { display: block; margin-bottom: 4px; font-size: 12px; }
+
+/* GS connection */
+.gs-row { display: flex; gap: 10px; align-items: flex-end; }
+.gs-row > div { flex: 1; }
+.gs-row label { font-size: 12px; font-weight: 600; display: block; margin-bottom: 5px; }
+.gs-status { margin-top: 10px; font-size: 12px; padding: 6px 10px; border-radius: 6px; display: none; }
+.gs-status.ok  { background: var(--green-lt); color: #0b5c35; }
+.gs-status.err { background: var(--red-lt);   color: var(--red); }
+.gs-status.inf { background: #f8f9fa; color: var(--muted); }
+
+
+@media(max-width:680px) { .upload-grid { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } .gs-row { flex-direction: column; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>SU Mapping Checker</h1>
+    <p>Validates SU channel manager data before mapping with internal platform</p>
+  </div>
+  <span class="tag">FabHotels Internal</span>
+</header>
+
+<div class="main">
+  <!-- STEPPER -->
+  <div class="stepper">
+    <div class="step active" id="si1"><div class="sc">1</div><div class="sl">Upload Files</div></div>
+    <div class="sline" id="ln1"></div>
+    <div class="step pending" id="si2"><div class="sc">2</div><div class="sl">Configure Columns</div></div>
+    <div class="sline" id="ln2"></div>
+    <div class="step pending" id="si3"><div class="sc">3</div><div class="sl">Results</div></div>
+  </div>
+
+  <!-- ── STEP 1 ── -->
+  <div class="pane on" id="p1">
+    <div class="card">
+      <div class="card-title">Upload Data Files</div>
+      <div class="upload-grid" style="grid-template-columns:1fr">
+        <div>
+          <div class="uzone" id="z-su" ondragover="dov(event,'su')" ondragleave="dlv('su')" ondrop="ddrop(event,'su')">
+            <input type="file" accept=".xlsx,.xls,.csv" onchange="fsel(event,'su')">
+            <div class="uicon">📡</div>
+            <h3>SU / Channel Manager Data</h3>
+            <p>File with PMS Room ID, PMS Rate ID, OBP columns</p>
+          </div>
+          <div class="fbadge" id="fb-su">
+            <strong id="fn-su"></strong><span id="fs-su"></span>
+            <div id="su-sheet-info" style="display:none;margin-top:6px;font-size:11px;color:var(--green);font-weight:600"></div>
+          </div>
+        </div>
+      </div>
+      <div class="actions"><button class="btn btn-blue" id="btn1" onclick="go(2)" disabled>Next →</button></div>
+    </div>
+
+    <!-- CRS Data live connection -->
+    <div class="card">
+      <div class="card-title">📋 CRS Data — Google Sheet</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <button class="btn btn-blue" onclick="fetchCRS()">Fetch CRS Data</button>
+        <div class="gs-status" id="crs-status" style="margin:0;flex:1"></div>
+      </div>
+    </div>
+
+    <!-- Prop Level Dashboard live connection -->
+    <div class="card">
+      <div class="card-title">📊 Prop Level Dashboard — Google Sheet
+        <span style="font-size:11px;font-weight:400;color:var(--muted)">optional · used for OTA live checks</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <button class="btn btn-blue" onclick="fetchDash()">Fetch Dashboard</button>
+        <div class="gs-status" id="gs-status" style="margin:0;flex:1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STEP 2 ── -->
+  <div class="pane" id="p2">
+    <div class="card">
+      <div class="card-title">Configure Columns</div>
+
+      <div class="infobox">
+        <strong>How SU data is parsed automatically:</strong>
+        <b>PMS Room ID</b> format: <code>{PropertyID}-{RoomTypeID}-{suffix}</code> &nbsp;|&nbsp;
+        <b>PMS Rate ID</b> format: <code>{PropertyID}-{RoomTypeID}-{RatePlanCode}-{suffix}</code><br>
+        The tool extracts these parts and cross-checks them against your internal data.
+      </div>
+
+      <div class="form-section">
+        <h3>SU File Columns</h3>
+        <div class="form-row">
+          <label>PMS Room ID column</label>
+          <div><select id="su-roomid"></select><div class="field-note">e.g. 24873-1-I1HGOU2GF4XO</div></div>
+        </div>
+        <div class="form-row">
+          <label>PMS Rate ID column</label>
+          <div><select id="su-rateid"></select><div class="field-note">e.g. 24873-1-CP-OEXISYSXD</div></div>
+        </div>
+        <div class="form-row">
+          <label>OBP Multiplier Value column</label>
+          <div><select id="su-obp"></select><div class="field-note">e.g. {"1": 1, "2": 1}</div></div>
+        </div>
+        <div class="form-row">
+          <label>Property Name column <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <div><select id="su-propname"><option value="">— none —</option></select></div>
+        </div>
+        <div class="form-row">
+          <label>Channel Code column <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <div><select id="su-channel"><option value="">— none —</option></select><div class="field-note">Channel 97 (Yatra) is excluded from all checks</div></div>
+        </div>
+        <div class="form-row">
+          <label>Applicable Guests column <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <div><select id="su-appguests"><option value="">— none —</option></select><div class="field-note">Should be empty for all channels except 97 (Yatra)</div></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Internal Platform Columns</h3>
+        <div class="form-row">
+          <label>Property ID column</label>
+          <div><select id="int-propid"></select><div class="field-note">Must match the number in PMS IDs (e.g. 24873)</div></div>
+        </div>
+        <div class="form-row">
+          <label>Room Type ID column</label>
+          <div><select id="int-roomtype"></select><div class="field-note">Must match the position-2 value in PMS IDs (e.g. 1)</div></div>
+        </div>
+        <div class="form-row">
+          <label>Rate Plan Code column</label>
+          <div><select id="int-ratecode"></select><div class="field-note">e.g. CP, EP, MAP — must match code in PMS Rate ID</div></div>
+        </div>
+        <div class="form-row">
+          <label>Max Occupancy column <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <div><select id="int-maxocc"><option value="">— not available —</option></select><div class="field-note">Used to validate OBP occupancy keys</div></div>
+        </div>
+        <div class="form-row">
+          <label>Active filter column <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <div><select id="int-isactive"><option value="">— none (include all rows) —</option></select><div class="field-note">Only rows where this = TRUE are included in checks</div></div>
+        </div>
+      </div>
+
+      <div class="actions-sb">
+        <button class="btn btn-out" onclick="go(1)">← Back</button>
+        <button class="btn btn-blue" onclick="runAnalysis()">Run Analysis →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STEP 3 ── -->
+  <div class="pane" id="p3">
+    <div class="stats" id="stats"></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="card-title" id="res-title" style="margin:0">Results</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-out btn-sm" onclick="go(2)">← Configure</button>
+          <button class="btn btn-green btn-sm" onclick="doExport()">Export to Excel</button>
+        </div>
+      </div>
+      <div id="crs-filter-info" style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:6px 10px;background:#f8f9fa;border-radius:6px;border-left:3px solid var(--blue)"></div>
+      <div class="toolbar">
+        <input type="text" id="srch" placeholder="Search…" oninput="pg=1;renderTbl()">
+        <select id="pgsz" onchange="pg=1;renderTbl()" style="width:auto">
+          <option value="50">50/page</option>
+          <option value="100">100/page</option>
+          <option value="250">250/page</option>
+        </select>
+      </div>
+      <div class="tbl-wrap" id="tbl"></div>
+      <div class="pgn" id="pgn"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────
+// Column indices (0-based) in Prop Level Dashboard + channel code mapping
+const CH_MAP = [
+  { col: 11, code: '19',  name: 'Booking.com'  },
+  { col: 18, code: '105', name: 'MakeMyTrip'   },
+  { col: 22, code: '189', name: 'Agoda'         },
+  { col: 29, code: '217', name: 'EMT'           },
+  { col: 31, code: '351', name: 'CT'            },
+  { col: 34, code: '9',   name: 'Expedia'       },
+  { col: 37, code: '97',  name: 'Yatra'         },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────
+const F = {
+  su:  { wb: null, data: null, hdrs: [], file: '' },
+  int: { wb: null, data: null, hdrs: [], file: '' }
+};
+const DASH = { map: null, timestamp: null }; // propId → { chCode: isLive }
+let RES = null, filter = 'rr', pg = 1;
+
+// ── Stepper ───────────────────────────────────────────────────────────────
+function go(n) {
+  [1,2,3].forEach(i => {
+    document.getElementById('p'+i).className = 'pane' + (i===n?' on':'');
+    const si = document.getElementById('si'+i);
+    si.className = 'step ' + (i<n?'done':i===n?'active':'pending');
+  });
+  [1,2].forEach(i => { document.getElementById('ln'+i).className = 'sline'+(i<n?' done':''); });
+  if (n===2) initCfg();
+}
+
+// ── Google Sheets via the GAS proxy (Phase 2) ────────────────────────────
+// The original implementation used gviz/tq JSONP which required each viewer
+// to be signed into a Google account with sheet access. The team now uses
+// a service-account-style GAS proxy, so we route fetches through API.* and
+// keep the same fetchGviz(sheetId, tabName, onSuccess, onError) contract
+// for the rest of the file. The IDs/tab names are tagged so we know which
+// endpoint to hit.
+const CRS_SHEET_ID  = 'CRS';
+const CRS_SHEET_TAB = 'CRS Data';
+const DASH_SHEET_ID = 'DASHBOARD';
+const DASH_SHEET_TAB = 'Prop Level Dashboard';
+
+function fetchGviz(sheetId, _tabName, onSuccess, onError) {
+  // Map the sheetId tag to the right API endpoint.
+  // CRS:        { cols, rows }       → return [cols, ...rows]
+  // DASHBOARD:  { rows }             → return rows as-is (already 2-D incl. headers)
+  let p;
+  if (sheetId === 'CRS') {
+    p = API.crs().then(({ cols, rows }) => [cols, ...rows]);
+  } else if (sheetId === 'DASHBOARD') {
+    p = API.dashboard().then(({ rows }) => rows);
+  } else {
+    return onError('Unknown sheet id: ' + sheetId);
+  }
+  p.then(onSuccess).catch(err => onError(err && err.message || String(err)));
+}
+
+function fetchDash() {
+  setGsStatus('inf', 'Connecting…');
+  fetchGviz(DASH_SHEET_ID, DASH_SHEET_TAB,
+    rows => {
+      DASH.map = parseDashboard(rows);
+      DASH.timestamp = new Date().toLocaleTimeString();
+      setGsStatus('ok', `✓ Connected — ${DASH.map.size} properties loaded at ${DASH.timestamp}`);
+    },
+    err => setGsStatus('err', '✗ ' + err)
+  );
+}
+
+function fetchCRS() {
+  setCrsStatus('inf', 'Fetching CRS data…');
+  fetchGviz(CRS_SHEET_ID, CRS_SHEET_TAB,
+    rows => {
+      if (rows.length < 2) { setCrsStatus('err', '✗ Sheet returned no data rows.'); return; }
+      const hdrs = rows[0].map(h => String(h).trim());
+      const data = rows.slice(1).map(row => {
+        const o = {};
+        hdrs.forEach((h, i) => o[h] = row[i] !== undefined ? row[i] : '');
+        return o;
+      });
+      F.int.data = data;
+      F.int.hdrs = hdrs;
+      F.int.file = 'CRS Data (Google Sheet)';
+      setCrsStatus('ok', `✓ ${data.length.toLocaleString()} entries loaded at ${new Date().toLocaleTimeString()}`);
+      checkStep1Complete();
+    },
+    err => setCrsStatus('err', '✗ ' + err)
+  );
+}
+
+function checkStep1Complete() {
+  document.getElementById('btn1').disabled = !(F.su.data && F.int.data);
+}
+
+function setCrsStatus(type, msg) {
+  const el = document.getElementById('crs-status');
+  el.className = 'gs-status ' + type; el.innerHTML = msg; el.style.display = 'block';
+}
+
+function parseDashboard(rows) {
+  const map = new Map();
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const propId = normId(row[0]);
+    if (!propId) continue;
+    const status = {};
+    for (const ch of CH_MAP) status[ch.code] = String(row[ch.col] || '').trim() === 'Live';
+    map.set(propId, status);
+  }
+  return map;
+}
+
+function setGsStatus(type, msg) {
+  const el = document.getElementById('gs-status');
+  el.className = 'gs-status ' + type;
+  el.innerHTML = msg;
+  el.style.display = 'block';
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────
+function dov(e,k) { e.preventDefault(); document.getElementById('z-'+k).classList.add('drag'); }
+function dlv(k)   { document.getElementById('z-'+k).classList.remove('drag'); }
+function ddrop(e,k){ e.preventDefault(); dlv(k); const f=e.dataTransfer.files[0]; if(f) proc(f,k); }
+function fsel(e,k) { const f=e.target.files[0]; if(f) proc(f,k); }
+
+function proc(file, k) {
+  const r = new FileReader();
+  r.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      F[k].wb = wb; F[k].file = file.name;
+      if (k === 'su') {
+        // Always combine ALL sheets for SU data
+        loadAllSheets(wb);
+      } else {
+        // Internal data: show sheet selector if multiple
+        if (wb.SheetNames.length > 1) {
+          const sel = document.getElementById('sh-int');
+          sel.innerHTML = wb.SheetNames.map(n=>`<option>${esc(n)}</option>`).join('');
+          document.getElementById('ss-int').style.display = 'block';
+        } else {
+          document.getElementById('ss-int').style.display = 'none';
+        }
+        loadSheet('int', wb.SheetNames[0]);
+      }
+    } catch(ex) { alert('Error reading file: '+ex.message); }
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function loadAllSheets(wb) {
+  // Merge rows from every sheet; use headers from the first non-empty sheet
+  let combined = [], hdrs = [];
+  for (const name of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval:'' });
+    if (rows.length && !hdrs.length) hdrs = Object.keys(rows[0]);
+    combined = combined.concat(rows);
+  }
+  F.su.data = combined;
+  F.su.hdrs = hdrs;
+  document.getElementById('z-su').classList.add('done');
+  document.getElementById('fb-su').style.display = 'block';
+  document.getElementById('fn-su').textContent = F.su.file;
+  document.getElementById('fs-su').textContent = ` — ${combined.length.toLocaleString()} rows · ${hdrs.length} cols`;
+  const info = document.getElementById('su-sheet-info');
+  if (wb.SheetNames.length > 1) {
+    info.textContent = `✓ Combined ${wb.SheetNames.length} sheets: ${wb.SheetNames.join(', ')}`;
+    info.style.display = 'block';
+  } else {
+    info.style.display = 'none';
+  }
+  document.getElementById('btn1').disabled = !(F.su.data && F.int.data);
+}
+
+function loadSheet(k, name) {
+  const ws = F[k].wb.Sheets[name];
+  const data = XLSX.utils.sheet_to_json(ws, { defval:'' });
+  F[k].data = data;
+  F[k].hdrs = data.length ? Object.keys(data[0]) : [];
+  document.getElementById('z-'+k).classList.add('done');
+  const fb = document.getElementById('fb-'+k);
+  fb.style.display = 'block';
+  document.getElementById('fn-'+k).textContent = F[k].file;
+  document.getElementById('fs-'+k).textContent = ` — ${data.length.toLocaleString()} rows · ${F[k].hdrs.length} cols`;
+  document.getElementById('btn1').disabled = !(F.su.data && F.int.data);
+}
+
+function shchg(k) { loadSheet(k, document.getElementById('sh-'+k).value); }
+
+// ── Configure ─────────────────────────────────────────────────────────────
+function detect(hdrs, ...kws) {
+  for (const kw of kws) {
+    const h = hdrs.find(h => h.toLowerCase().includes(kw.toLowerCase()));
+    if (h) return h;
+  }
+  return hdrs[0] || '';
+}
+
+function mkOpts(hdrs, selected) {
+  return hdrs.map(h => `<option${h===selected?' selected':''}>${esc(h)}</option>`).join('');
+}
+
+function initCfg() {
+  const sh = F.su.hdrs, ih = F.int.hdrs;
+
+  // auto-detect SU columns
+  const dRoom = detect(sh, 'pms room', 'room id', 'roomid');
+  const dRate = detect(sh, 'pms rate', 'rate id', 'rateid');
+  const dOBP  = detect(sh, 'obp', 'multiplier', 'occ');
+  const dPN   = detect(sh, 'property name', 'hotel name', 'name');
+  const dCh   = detect(sh, 'channel', 'ota');
+  const dAG   = detect(sh, 'applicable guests', 'applicable_guests', 'appguests');
+
+  document.getElementById('su-roomid').innerHTML    = mkOpts(sh, dRoom);
+  document.getElementById('su-rateid').innerHTML    = mkOpts(sh, dRate);
+  document.getElementById('su-obp').innerHTML       = mkOpts(sh, dOBP);
+  document.getElementById('su-propname').innerHTML  = '<option value="">— none —</option>' + mkOpts(sh, dPN);
+  document.getElementById('su-channel').innerHTML   = '<option value="">— none —</option>' + mkOpts(sh, dCh);
+  document.getElementById('su-appguests').innerHTML = '<option value="">— none —</option>' + mkOpts(sh, dAG);
+
+  // auto-detect Internal columns
+  const dIPID = detect(ih, 'property id', 'prop id', 'hotel id', 'property_id');
+  const dIRT  = detect(ih, 'room type', 'room_type', 'roomtype');
+  const dIRC  = detect(ih, 'rate plan', 'rate code', 'rate_plan', 'ratecode', 'rate');
+  const dIMO  = detect(ih, 'max occ', 'occupancy', 'max_occ');
+
+  const dIAC  = detect(ih, 'is_active', 'active', 'status');
+
+  document.getElementById('int-propid').innerHTML   = mkOpts(ih, dIPID);
+  document.getElementById('int-roomtype').innerHTML = mkOpts(ih, dIRT);
+  document.getElementById('int-ratecode').innerHTML = mkOpts(ih, dIRC);
+  document.getElementById('int-maxocc').innerHTML   = '<option value="">— not available —</option>' + mkOpts(ih, dIMO);
+  document.getElementById('int-isactive').innerHTML = '<option value="">— none (include all rows) —</option>' + mkOpts(ih, dIAC);
+}
+
+// ── Analysis ──────────────────────────────────────────────────────────────
+// Normalise property/room/rate IDs: trim whitespace, drop trailing .0 from numbers
+function normId(v) {
+  return String(v ?? '').trim().replace(/\.0+$/, '');
+}
+
+function parsePMSRoom(val) {
+  const p = String(val||'').split('-');
+  return { propId: normId(p[0]), roomType: normId(p[1]), raw: val };
+}
+
+function parsePMSRate(val) {
+  const p = String(val||'').split('-');
+  return { propId: normId(p[0]), roomType: normId(p[1]), rateCode: normId(p[2]), raw: val };
+}
+
+function parseOBP(val) {
+  try {
+    const obj = JSON.parse(String(val||'{}'));
+    return typeof obj === 'object' && obj !== null ? obj : {};
+  } catch { return {}; }
+}
+
+function runAnalysis() {
+  const cfg = {
+    su: {
+      roomId:   document.getElementById('su-roomid').value,
+      rateId:   document.getElementById('su-rateid').value,
+      obp:      document.getElementById('su-obp').value,
+      propName: document.getElementById('su-propname').value,
+      channel:   document.getElementById('su-channel').value,
+      appGuests: document.getElementById('su-appguests').value,
+    },
+    int: {
+      propId:   document.getElementById('int-propid').value,
+      roomType: document.getElementById('int-roomtype').value,
+      rateCode: document.getElementById('int-ratecode').value,
+      maxOcc:   document.getElementById('int-maxocc').value,
+      isActive: document.getElementById('int-isactive').value,
+    }
+  };
+
+  // Build internal lookups
+  const intRPSet  = new Set();   // "propId|roomType|rateCode"
+  const intOccMap = new Map();   // "propId|roomType" → maxOcc
+  const intPropSet = new Set();  // propId — to ignore unknown properties in rpex
+
+  for (const row of F.int.data) {
+    // Skip inactive rows when an active-filter column is configured
+    if (cfg.int.isActive && String(row[cfg.int.isActive]).toUpperCase().trim() !== 'TRUE') continue;
+
+    const pid  = normId(row[cfg.int.propId]);
+    const rt   = normId(row[cfg.int.roomType]);
+    const rc   = normId(row[cfg.int.rateCode]);
+    const mo   = cfg.int.maxOcc ? parseInt(row[cfg.int.maxOcc]) || 0 : 0;
+    if (!pid) continue;
+    intRPSet.add(`${pid}|${rt}|${rc}`);
+    intPropSet.add(pid);
+    const ok = `${pid}|${rt}`;
+    if (mo > 0 && (!intOccMap.has(ok) || intOccMap.get(ok) < mo)) intOccMap.set(ok, mo);
+  }
+
+  const res = {
+    rr:      [],  // room-rate room type mismatch
+    obpv:    [],  // OBP multiplier value ≠ 1
+    obpoe:   [],  // OBP extra occupancies in SU (should be removed)
+    obpom:   [],  // OBP missing occupancies in SU (need to be added)
+    rpmicp:  [],  // rate plan missing in SU — EP / CP
+    rpmimap: [],  // rate plan missing in SU — MAP / AP
+    rpmi:    [],  // rate plan missing in SU — other rate codes
+    rpex:    [],  // rate plan extra in SU (in SU but not internal)
+    apg:   [],  // non-97 channel has value in Applicable Guests
+    chlive:[],  // OTA live in dashboard but no SU mapping
+    chdead:[],  // SU mapping exists but OTA not live in dashboard
+    ncrs:  [],  // SU rows with property not in CRS data
+    ok:    [],  // all clear
+    cfg
+  };
+
+  const suRPSet     = new Set();         // "propId|roomType|rateCode" (for rpex)
+  const suRPChSet   = new Set();         // "ch|propId|roomType|rateCode" (for per-channel rpmi)
+  const suChMap     = new Set();
+  const suNameMap   = new Map();         // propId → property name
+  const suSuffixMap = new Map();         // "propId|roomType" → suffix (4th segment of PMS Rate ID)
+  const suRPChDataMap = new Map();       // "ch|propId|roomType|rateCode" → { raw, chName, pname }
+  let suExcluded = 0;
+
+  for (const row of F.su.data) {
+    const rm  = parsePMSRoom(row[cfg.su.roomId]);
+    const rt  = parsePMSRate(row[cfg.su.rateId]);
+    const obp = parseOBP(row[cfg.su.obp]);
+    const pname = cfg.su.propName  ? String(row[cfg.su.propName]||'')  : '';
+    const ch    = cfg.su.channel   ? String(row[cfg.su.channel]||'')   : '';
+    const ag    = cfg.su.appGuests ? String(row[cfg.su.appGuests]||'') : '';
+
+    // Skip rows for properties not present in CRS data
+    if (!rt.propId || !intPropSet.has(rt.propId)) {
+      suExcluded++;
+      res.ncrs.push({ _propId: rt.propId || '(empty)', _pname: pname, _ch: ch,
+        _rm: rm, _rt: rt, _issue: 'Property ID not found in CRS data' });
+      continue;
+    }
+
+    const isYatra = ch === '97';
+    const chEntry = CH_MAP.find(c => c.code === ch);
+    const chName  = chEntry ? chEntry.name : ch;
+    const base = { _pname: pname, _ch: ch, _chName: chName, _rm: rm, _rt: rt, _obp: obp, _ag: ag };
+
+    // Track every property+channel seen in SU (including Yatra) for OTA live check
+    if (ch && rt.propId) suChMap.add(`${rt.propId}|${ch}`);
+    if (pname && rt.propId && !suNameMap.has(rt.propId)) suNameMap.set(rt.propId, pname);
+
+    // Check: Applicable Guests should only have values for channel 97
+    if (cfg.su.appGuests && !isYatra && ag.trim() !== '') {
+      res.apg.push({ ...base, _issue: `Channel ${ch} has value "${ag}" in Applicable Guests — only channel 97 (Yatra) should use this field` });
+    }
+
+    // Skip channel 97 (Yatra) from all OBP / rate plan checks
+    if (isYatra) continue;
+
+    // Check 1: room type in room ID must match room type in rate ID
+    if (rm.roomType !== rt.roomType) {
+      res.rr.push({ ...base, _issue: `Room ID room type "${rm.roomType}" ≠ Rate ID room type "${rt.roomType}"` });
+    }
+
+    // Check 2: all OBP multiplier values should be 1
+    const badVals = Object.entries(obp).filter(([,v]) => Number(v) !== 1);
+    if (badVals.length) {
+      res.obpv.push({ ...base, _badVals: badVals, _issue: badVals.map(([k,v])=>`Occ ${k}: ${v}`).join(', ') });
+    }
+
+    // Check 3: OBP occupancy keys vs internal max occupancy
+    const occKey = `${rt.propId}|${rt.roomType}`;
+    if (cfg.int.maxOcc && intOccMap.has(occKey)) {
+      const maxOcc = intOccMap.get(occKey);
+      const obpOccs = Object.keys(obp).map(Number).sort((a,b)=>a-b);
+      const extra   = obpOccs.filter(o => o > maxOcc);
+      const missing = Array.from({length: maxOcc}, (_,i) => i+1).filter(o => !obpOccs.includes(o));
+      const rec = { ...base, _maxOcc: maxOcc, _obpOccs: obpOccs, _extra: extra, _missing: missing };
+      if (extra.length)   res.obpoe.push({ ...rec, _issue: `Extra in SU: Occ ${extra.join(', ')} — internal max occ is ${maxOcc}` });
+      if (missing.length) res.obpom.push({ ...rec, _issue: `Missing in SU: Occ ${missing.join(', ')} — internal max occ is ${maxOcc}` });
+    }
+
+    // Check: SU row exists but channel is not Live in dashboard
+    if (DASH.map && DASH.map.size > 0) {
+      const chStatus = DASH.map.get(rt.propId);
+      if (chStatus && !chStatus[ch]) {
+        const maxOcc = intOccMap.get(`${rt.propId}|${rt.roomType}`) || '';
+        res.chdead.push({ ...base, _maxOcc: maxOcc,
+          _issue: `Mapping exists in SU but ${chName} (ch ${ch}) is not Live in dashboard` });
+      }
+    }
+
+    // Track SU rate plans (exclude Yatra)
+    suRPSet.add(`${rt.propId}|${rt.roomType}|${rt.rateCode}`);
+    suRPChSet.add(`${ch}|${rt.propId}|${rt.roomType}|${rt.rateCode}`);
+    suRPChDataMap.set(`${ch}|${rt.propId}|${rt.roomType}|${rt.rateCode}`, { raw: rt.raw, chName, pname });
+    // Store suffix (4th segment of PMS Rate ID) for reconstructing missing IDs
+    const rtSuffix = String(rt.raw || '').split('-')[3] || '';
+    if (rtSuffix && !suSuffixMap.has(`${rt.propId}|${rt.roomType}`)) {
+      suSuffixMap.set(`${rt.propId}|${rt.roomType}`, rtSuffix);
+    }
+  }
+
+  // Check 4: rate plan coverage — per channel, split by rate code type
+  for (const k of intRPSet) {
+    const [pid, rt, rc] = k.split('|');
+    for (const chObj of CH_MAP) {
+      if (chObj.code === '97') continue;  // skip Yatra
+      // If dashboard available, only check channels where property is live
+      if (DASH.map && DASH.map.size > 0) {
+        const chStatus = DASH.map.get(pid);
+        if (chStatus && !chStatus[chObj.code]) continue;
+      }
+      if (!suRPChSet.has(`${chObj.code}|${pid}|${rt}|${rc}`)) {
+        const entry = {
+          _propId: pid, _pname: suNameMap.get(pid) || '',
+          _chCode: chObj.code, _chName: chObj.name,
+          _roomType: rt, _rateCode: rc,
+          _pmsRateId: (() => { const sfx = suSuffixMap.get(`${pid}|${rt}`); return sfx ? `${pid}-${rt}-${rc}-${sfx}` : `${pid}-${rt}-${rc}`; })(),
+          _maxOcc: intOccMap.get(`${pid}|${rt}`) || '',
+          _issue: 'Available internally but not pushed to SU'
+        };
+        const rcu = rc.toUpperCase();
+        if (rcu === 'EP' || rcu === 'CP') res.rpmicp.push(entry);
+        else if (rcu === 'MAP' || rcu === 'AP') res.rpmimap.push(entry);
+        else res.rpmi.push(entry);
+      }
+    }
+  }
+  for (const k of suRPChSet) {
+    const [ch, pid, rt, rc] = k.split('|');
+    if (!intPropSet.has(pid)) continue;  // property not in internal — skip
+    if (!intRPSet.has(`${pid}|${rt}|${rc}`)) {
+      const d = suRPChDataMap.get(k) || {};
+      res.rpex.push({
+        _propId: pid, _pname: d.pname || suNameMap.get(pid) || '',
+        _chCode: ch, _chName: d.chName || ch,
+        _roomType: rt, _rateCode: rc,
+        _pmsRateId: d.raw || `${pid}-${rt}-${rc}`,
+        _maxOcc: intOccMap.get(`${pid}|${rt}`) || '',
+        _issue: 'Mapped in SU but not found internally'
+      });
+    }
+  }
+
+  // Check 5: OTA live in dashboard but no SU mapping (requires dashboard connection)
+  if (DASH.map && DASH.map.size > 0) {
+    for (const [propId, chStatus] of DASH.map) {
+      if (!intPropSet.has(propId)) continue;  // skip properties not in CRS data
+      for (const ch of CH_MAP) {
+        const isLive       = chStatus[ch.code];
+        const hasSUMapping = suChMap.has(`${propId}|${ch.code}`);
+        if (isLive && !hasSUMapping) {
+          res.chlive.push({ _propId: propId, _pname: suNameMap.get(propId) || '', _chCode: ch.code, _chName: ch.name,
+            _issue: `${ch.name} (ch ${ch.code}) is Live but no mapping found in SU` });
+        }
+      }
+    }
+  }
+
+  res._crsProps   = intPropSet.size;
+  res._suExcluded = suExcluded;
+  RES = res;
+  filter = 'rr'; pg = 1;
+  go(3);
+  renderStats();
+  renderTbl();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+const TABS = [
+  { k:'rr',   lbl:'Room-Rate Mismatch',       cls:'s1', desc:'Room type in PMS Room ID ≠ PMS Rate ID (excl. ch 97)' },
+  { k:'obpv',  lbl:'OBP Multiplier ≠ 1',        cls:'s2', desc:'Multiplier value is not 1 (excl. ch 97)' },
+  { k:'obpoe', lbl:'OBP Extra Occ (remove)',   cls:'s3', desc:'Occupancy in SU exceeds internal max — should be removed (excl. ch 97)' },
+  { k:'obpom', lbl:'OBP Missing Occ (add)',    cls:'s3', desc:'Occupancy in internal not present in SU — needs to be added (excl. ch 97)' },
+  { k:'rpmicp',  lbl:'Missing in SU — EP/CP',   cls:'s4', desc:'EP or CP rate plan in CRS but not in SU (excl. ch 97)' },
+  { k:'rpmimap', lbl:'Missing in SU — MAP/AP',  cls:'s4', desc:'MAP or AP rate plan in CRS but not in SU (excl. ch 97)' },
+  { k:'rpmi',    lbl:'Missing in SU — Other',   cls:'s4', desc:'Other rate plans in CRS but not in SU (excl. ch 97)' },
+  { k:'rpex',    lbl:'Rate Plan Extra in SU',   cls:'s5', desc:'SU has rate plan not found internally (excl. ch 97)' },
+  { k:'apg',    lbl:'Applicable Guests Issue',  cls:'s1', desc:'Non-97 channel has value in Applicable Guests' },
+  { k:'chlive', lbl:'OTA Live, No Mapping',    cls:'s2', desc:'Channel is Live in dashboard but no SU mapping (needs dashboard connection)' },
+  { k:'chdead', lbl:'Mapped, OTA Not Live',    cls:'s3', desc:'SU has mapping but OTA not Live in dashboard (needs dashboard connection)' },
+  { k:'ncrs',   lbl:'Not in CRS (excluded)',   cls:'s0', desc:'SU rows excluded because the property was not found in CRS data' },
+  { k:'ok',     lbl:'All Clear',               cls:'s6', desc:'Rows with no issues detected' },
+];
+
+function renderStats() {
+  const info = document.getElementById('crs-filter-info');
+  if (info) {
+    const excl = RES._suExcluded || 0;
+    const crs  = RES._crsProps  || 0;
+    info.innerHTML = `CRS base: <b>${crs.toLocaleString()} properties</b> &nbsp;|&nbsp; SU rows excluded (property not in CRS): <b style="color:${excl>0?'var(--amber)':'var(--green)'}">${excl.toLocaleString()}</b>`;
+  }
+  document.getElementById('stats').innerHTML = TABS.map(t =>
+    `<div class="stat ${t.cls}${filter===t.k?' active':''}" onclick="setF('${t.k}')" title="${t.desc}">
+      <div class="stat-n">${RES[t.k].length}</div>
+      <div class="stat-l">${t.lbl}</div>
+    </div>`
+  ).join('');
+}
+
+function setF(k) { filter=k; pg=1; renderStats(); renderTbl(); }
+
+function renderTbl() {
+  const srch = document.getElementById('srch').value.toLowerCase().trim();
+  const pgsz = parseInt(document.getElementById('pgsz').value);
+
+  let data = RES[filter] || [];
+  if (srch) data = data.filter(r => JSON.stringify(r).toLowerCase().includes(srch));
+
+  const total = data.length;
+  const pages = Math.max(1, Math.ceil(total/pgsz));
+  if (pg > pages) pg = pages;
+  const slice = data.slice((pg-1)*pgsz, pg*pgsz);
+
+  const labels = { rr:'Room-Rate Mismatch', obpv:'OBP Multiplier Issues', obpoe:'OBP Extra Occupancies (Remove)', obpom:'OBP Missing Occupancies (Add)', rpmicp:'Rate Plans Missing in SU — EP/CP', rpmimap:'Rate Plans Missing in SU — MAP/AP', rpmi:'Rate Plans Missing in SU — Other', rpex:'Rate Plans Extra in SU', apg:'Applicable Guests Issues (non-ch 97)', chlive:'OTA Live — No Mapping in SU', chdead:'Mapped in SU — OTA Not Live', ncrs:'Not in CRS (excluded)', ok:'All Clear' };
+  document.getElementById('res-title').textContent = `${labels[filter]} (${total.toLocaleString()})`;
+
+  if (!slice.length) {
+    document.getElementById('tbl').innerHTML = `<div class="empty">${filter==='ok'&&!srch?'✓ No issues in this category — great!':srch?'No results for "'+esc(srch)+'"':'No issues found — all clear!'}</div>`;
+    document.getElementById('pgn').innerHTML = '';
+    return;
+  }
+
+  let thead='', tbody='';
+
+  if (filter === 'rr') {
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Room ID</th><th>Room Type (Room)</th><th>PMS Rate ID</th><th>Room Type (Rate)</th><th>Rate Plan</th><th>Issue</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._rt.propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-blue">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._ch)}</td>
+      <td class="mono">${esc(r._rm.raw)}</td>
+      <td class="${r._rm.roomType!==r._rt.roomType?'bad':'ok'}">${esc(r._rm.roomType)}</td>
+      <td class="mono">${esc(r._rt.raw)}</td>
+      <td class="${r._rm.roomType!==r._rt.roomType?'bad':'ok'}">${esc(r._rt.roomType)}</td>
+      <td><span class="badge b-blue">${esc(r._rt.rateCode)}</span></td>
+      <td class="bad">${esc(r._issue)}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'obpv') {
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>OBP Value (raw)</th><th>Bad Occupancy Values</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._rt.propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-blue">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._ch)}</td>
+      <td class="mono">${esc(r._rt.raw)}</td>
+      <td>${esc(r._rt.roomType)}</td>
+      <td><span class="badge b-blue">${esc(r._rt.rateCode)}</span></td>
+      <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(JSON.stringify(r._obp))}</td>
+      <td class="bad">${r._badVals.map(([k,v])=>`<span class="badge b-red">Occ ${esc(k)}: ${esc(String(v))}</span> `).join('')}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'obpoe') {
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>OBP Occupancies in SU</th><th>Should Be Removed</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._rt.propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-blue">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._ch)}</td>
+      <td class="mono">${esc(r._rt.raw)}</td>
+      <td>${esc(r._rt.roomType)}</td>
+      <td><span class="badge b-blue">${esc(r._rt.rateCode)}</span></td>
+      <td style="text-align:center;font-weight:600">${r._maxOcc}</td>
+      <td>${r._obpOccs.map(o=>`<span class="badge b-grn">Occ ${o}</span> `).join('')}</td>
+      <td>${r._extra.map(o=>`<span class="badge b-red">Occ ${o}</span> `).join('')}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'obpom') {
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>OBP Occupancies in SU</th><th>Needs to be Added</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._rt.propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-blue">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._ch)}</td>
+      <td class="mono">${esc(r._rt.raw)}</td>
+      <td>${esc(r._rt.roomType)}</td>
+      <td><span class="badge b-blue">${esc(r._rt.rateCode)}</span></td>
+      <td style="text-align:center;font-weight:600">${r._maxOcc}</td>
+      <td>${r._obpOccs.map(o=>`<span class="badge b-grn">Occ ${o}</span> `).join('')}</td>
+      <td>${r._missing.map(o=>`<span class="badge b-amb">Occ ${o}</span> `).join('')}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'rpmicp' || filter === 'rpmimap' || filter === 'rpmi') {
+    const badgeCls = filter === 'rpmicp' ? 'b-blue' : filter === 'rpmimap' ? 'b-pur' : 'b-amb';
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>Room Type ID</th><th>Rate Plan Code</th><th>PMS Rate ID</th><th>Internal Max Occ</th><th>Issue</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-blue">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._chCode)}</td>
+      <td>${esc(r._roomType)}</td>
+      <td><span class="badge ${badgeCls}">${esc(r._rateCode)}</span></td>
+      <td class="mono">${esc(r._pmsRateId)}</td>
+      <td style="text-align:center;font-weight:600">${r._maxOcc !== '' ? r._maxOcc : '<span style="color:#aaa">—</span>'}</td>
+      <td class="bad">${esc(r._issue)}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'rpex') {
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type ID</th><th>Rate Plan Code</th><th>Internal Max Occ</th><th>Issue</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-pur">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._chCode)}</td>
+      <td class="mono">${esc(r._pmsRateId)}</td>
+      <td>${esc(r._roomType)}</td>
+      <td><span class="badge b-pur">${esc(r._rateCode)}</span></td>
+      <td style="text-align:center;font-weight:600">${r._maxOcc !== '' ? r._maxOcc : '<span style="color:#aaa">—</span>'}</td>
+      <td style="color:var(--amber);font-weight:500">${esc(r._issue)}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'apg') {
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Rate Plan</th><th>Applicable Guests Value</th><th>Issue</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._rt.propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-red">${esc(r._chName)}</span></td>
+      <td class="bad">${esc(r._ch)}</td>
+      <td class="mono">${esc(r._rt.raw)}</td>
+      <td><span class="badge b-blue">${esc(r._rt.rateCode)}</span></td>
+      <td class="warn" style="font-weight:600">${esc(r._ag)}</td>
+      <td class="bad">${esc(r._issue)}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'chlive') {
+    const noConn = !DASH.map || DASH.map.size === 0;
+    if (noConn) {
+      document.getElementById('tbl').innerHTML = `<div class="empty">Dashboard not connected — fetch the Prop Level Dashboard in Step 1 first.</div>`;
+      document.getElementById('pgn').innerHTML = ''; return;
+    }
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>Issue</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-red">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._chCode)}</td>
+      <td class="bad">${esc(r._issue)}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'chdead') {
+    const noConn = !DASH.map || DASH.map.size === 0;
+    if (noConn) {
+      document.getElementById('tbl').innerHTML = `<div class="empty">Dashboard not connected — fetch the Prop Level Dashboard in Step 1 first.</div>`;
+      document.getElementById('pgn').innerHTML = ''; return;
+    }
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>Issue</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._rt.propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-amb">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._ch)}</td>
+      <td class="mono">${esc(r._rt.raw)}</td>
+      <td>${esc(r._rt.roomType)}</td>
+      <td><span class="badge b-amb">${esc(r._rt.rateCode)}</span></td>
+      <td style="text-align:center;font-weight:600">${r._maxOcc !== '' ? r._maxOcc : '<span style="color:#aaa">—</span>'}</td>
+      <td class="warn" style="font-weight:500">${esc(r._issue)}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'ncrs') {
+    thead = `<tr><th>Property ID (from SU)</th><th>Property Name</th><th>Channel</th><th>PMS Room ID</th><th>PMS Rate ID</th><th>Reason</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="bad mono">${esc(r._propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td>${esc(r._ch)}</td>
+      <td class="mono">${esc(r._rm.raw)}</td>
+      <td class="mono">${esc(r._rt.raw)}</td>
+      <td style="color:var(--muted)">${esc(r._issue)}</td>
+    </tr>`).join('');
+  }
+
+  else if (filter === 'ok') {
+    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>Room Type</th><th>Rate Plan</th><th>OBP Keys</th><th>PMS Room ID</th><th>PMS Rate ID</th></tr>`;
+    tbody = slice.map(r => `<tr>
+      <td class="mono">${esc(r._rt.propId)}</td>
+      <td>${esc(r._pname)}</td>
+      <td><span class="badge b-grn">${esc(r._chName)}</span></td>
+      <td class="mono">${esc(r._ch)}</td>
+      <td>${esc(r._rt.roomType)}</td>
+      <td><span class="badge b-grn">${esc(r._rt.rateCode)}</span></td>
+      <td>${Object.keys(r._obp).map(k=>`<span class="badge b-grn">Occ ${k}</span> `).join('')}</td>
+      <td class="mono">${esc(r._rm.raw)}</td>
+      <td class="mono">${esc(r._rt.raw)}</td>
+    </tr>`).join('');
+  }
+
+  document.getElementById('tbl').innerHTML = `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+
+  // pagination
+  const pgn = document.getElementById('pgn');
+  if (pages <= 1) { pgn.innerHTML = `<span>${total} record${total!==1?'s':''}</span>`; return; }
+  const s=(pg-1)*pgsz+1, e=Math.min(pg*pgsz,total);
+  pgn.innerHTML = `<span>${s}–${e} of ${total.toLocaleString()}</span>
+    <button onclick="pg--;renderTbl()" ${pg<=1?'disabled':''}>← Prev</button>
+    <span>Page ${pg}/${pages}</span>
+    <button onclick="pg++;renderTbl()" ${pg>=pages?'disabled':''}>Next →</button>`;
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+function doExport() {
+  const wb = XLSX.utils.book_new();
+
+  // Summary
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['SU Mapping Checker Report'],
+    ['Generated', new Date().toLocaleString()],
+    ['SU File', F.su.file], ['Internal File', F.int.file], [],
+    ['Check', 'Issues Found'],
+    ['Room-Rate Room Type Mismatch', RES.rr.length],
+    ['OBP Multiplier Value ≠ 1',    RES.obpv.length],
+    ['OBP Extra Occupancies (Remove)', RES.obpoe.length],
+    ['OBP Missing Occupancies (Add)',  RES.obpom.length],
+    ['Rate Plan Missing in SU — EP/CP',  RES.rpmicp.length],
+    ['Rate Plan Missing in SU — MAP/AP', RES.rpmimap.length],
+    ['Rate Plan Missing in SU — Other',  RES.rpmi.length],
+    ['Rate Plan Extra in SU',        RES.rpex.length],
+    ['Applicable Guests Issue (non-ch 97)', RES.apg.length],
+    ['OTA Live, No Mapping in SU',   RES.chlive.length],
+    ['Mapped in SU, OTA Not Live',   RES.chdead.length],
+    ['All Clear (no issues)',         RES.ok.length],
+  ]), 'Summary');
+
+  function addSheet(name, rows) {
+    if (!rows.length) return;
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name);
+  }
+
+  addSheet('Room-Rate Mismatch', RES.rr.map(r => ({
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'Channel': r._ch,
+    'PMS Room ID': r._rm.raw, 'Room Type (Room ID)': r._rm.roomType,
+    'PMS Rate ID': r._rt.raw, 'Room Type (Rate ID)': r._rt.roomType,
+    'Rate Plan Code': r._rt.rateCode, 'Issue': r._issue
+  })));
+
+  addSheet('OBP Multiplier Issues', RES.obpv.map(r => ({
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'OTA': r._chName, 'Channel Code': r._ch,
+    'PMS Rate ID': r._rt.raw, 'Room Type': r._rt.roomType, 'Rate Plan Code': r._rt.rateCode,
+    'OBP Value': JSON.stringify(r._obp), 'Bad Values': r._badVals.map(([k,v])=>`Occ ${k}:${v}`).join(', ')
+  })));
+
+  const obpoRow = (r, col) => ({
+    'Property ID': r._rt.propId, 'Property Name': r._pname,
+    'OTA': r._chName, 'Channel Code': r._ch,
+    'PMS Rate ID': r._rt.raw, 'Room Type': r._rt.roomType, 'Rate Plan Code': r._rt.rateCode,
+    'Internal Max Occ': r._maxOcc, 'OBP Occupancies in SU': r._obpOccs.join(', '),
+    [col]: (col === 'Should Be Removed' ? r._extra : r._missing).join(', ')
+  });
+  addSheet('OBP Extra Occ (Remove)',  RES.obpoe.map(r => obpoRow(r, 'Should Be Removed')));
+  addSheet('OBP Missing Occ (Add)',   RES.obpom.map(r => obpoRow(r, 'Needs to be Added')));
+
+  const rpmiRow = r => ({ 'Property ID': r._propId, 'Property Name': r._pname, 'OTA': r._chName, 'Channel Code': r._chCode, 'Room Type ID': r._roomType, 'Rate Plan Code': r._rateCode, 'PMS Rate ID': r._pmsRateId, 'Internal Max Occ': r._maxOcc, 'Issue': r._issue });
+  addSheet('Missing in SU — EP-CP',  RES.rpmicp.map(rpmiRow));
+  addSheet('Missing in SU — MAP-AP', RES.rpmimap.map(rpmiRow));
+  addSheet('Missing in SU — Other',  RES.rpmi.map(rpmiRow));
+
+  addSheet('Rate Plan Extra in SU', RES.rpex.map(r => ({
+    'Property ID': r._propId, 'Property Name': r._pname,
+    'OTA': r._chName, 'Channel Code': r._chCode,
+    'PMS Rate ID': r._pmsRateId, 'Room Type ID': r._roomType,
+    'Rate Plan Code': r._rateCode, 'Internal Max Occ': r._maxOcc,
+    'Issue': r._issue
+  })));
+
+  addSheet('Applicable Guests Issues', RES.apg.map(r => ({
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'Channel Code': r._ch,
+    'PMS Rate ID': r._rt.raw, 'Rate Plan Code': r._rt.rateCode,
+    'Applicable Guests Value': r._ag, 'Issue': r._issue
+  })));
+
+  addSheet('OTA Live No Mapping', RES.chlive.map(r => ({
+    'Property ID': r._propId, 'Property Name': r._pname, 'OTA': r._chName, 'Channel Code': r._chCode, 'Issue': r._issue
+  })));
+  addSheet('Mapped OTA Not Live', RES.chdead.map(r => ({
+    'Property ID': r._rt.propId, 'Property Name': r._pname,
+    'OTA': r._chName, 'Channel Code': r._ch,
+    'PMS Rate ID': r._rt.raw, 'Room Type': r._rt.roomType,
+    'Rate Plan': r._rt.rateCode, 'Internal Max Occ': r._maxOcc,
+    'Issue': r._issue
+  })));
+
+  addSheet('Not in CRS (Excluded)', RES.ncrs.map(r => ({
+    'Property ID (SU)': r._propId, 'Property Name': r._pname, 'Channel': r._ch,
+    'PMS Room ID': r._rm.raw, 'PMS Rate ID': r._rt.raw, 'Reason': r._issue
+  })));
+
+  addSheet('All Clear', RES.ok.map(r => ({
+    'Property ID': r._rt.propId, 'Property Name': r._pname,
+    'OTA': r._chName, 'Channel Code': r._ch,
+    'Room Type': r._rt.roomType, 'Rate Plan Code': r._rt.rateCode,
+    'PMS Room ID': r._rm.raw, 'PMS Rate ID': r._rt.raw,
+    'OBP Value': JSON.stringify(r._obp)
+  })));
+
+  XLSX.writeFile(wb, 'su-mapping-checker-report.xlsx');
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Auto-fetch dashboard and CRS data on load
+window.addEventListener('load', () => { /* URLs entered by user — fetch buttons trigger load */ });
+</script>
+</body>
+</html>
