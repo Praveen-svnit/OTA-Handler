@@ -269,6 +269,10 @@ body.hydrating .main { visibility: hidden; }
           <div><select id="su-obp"></select><div class="field-note">e.g. {"1": 1, "2": 1}</div></div>
         </div>
         <div class="form-row">
+          <label>SU ID column <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <div><select id="su-suid"><option value="">— none —</option></select><div class="field-note">Unique ID of the SU / channel-manager mapping row</div></div>
+        </div>
+        <div class="form-row">
           <label>Property Name column <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
           <div><select id="su-propname"><option value="">— none —</option></select></div>
         </div>
@@ -329,6 +333,9 @@ body.hydrating .main { visibility: hidden; }
       <div id="crs-filter-info" style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:6px 10px;background:#f8f9fa;border-radius:6px;border-left:3px solid var(--blue)"></div>
       <div class="toolbar">
         <input type="text" id="srch" placeholder="Search…" oninput="pg=1;renderTbl()">
+        <select id="otaf" onchange="pg=1;renderTbl()" style="width:auto" title="Filter by OTA">
+          <option value="">All OTAs</option>
+        </select>
         <select id="pgsz" onchange="pg=1;renderTbl()" style="width:auto">
           <option value="50">50/page</option>
           <option value="100">100/page</option>
@@ -552,6 +559,8 @@ function initCfg() {
   const dRoom = detect(sh, 'pms room', 'room id', 'roomid');
   const dRate = detect(sh, 'pms rate', 'rate id', 'rateid');
   const dOBP  = detect(sh, 'obp', 'multiplier', 'occ');
+  // Optional: only preselect when a real keyword matches (don't fall back to col 0)
+  const dSU   = sh.find(h => /su\s*id|suid|mapping\s*id|^id$|\bid\b/i.test(h)) || '';
   const dPN   = detect(sh, 'property name', 'hotel name', 'name');
   const dCh   = detect(sh, 'channel', 'ota');
   const dAG   = detect(sh, 'applicable guests', 'applicable_guests', 'appguests');
@@ -559,6 +568,7 @@ function initCfg() {
   document.getElementById('su-roomid').innerHTML    = mkOpts(sh, dRoom);
   document.getElementById('su-rateid').innerHTML    = mkOpts(sh, dRate);
   document.getElementById('su-obp').innerHTML       = mkOpts(sh, dOBP);
+  document.getElementById('su-suid').innerHTML      = '<option value="">— none —</option>' + mkOpts(sh, dSU);
   document.getElementById('su-propname').innerHTML  = '<option value="">— none —</option>' + mkOpts(sh, dPN);
   document.getElementById('su-channel').innerHTML   = '<option value="">— none —</option>' + mkOpts(sh, dCh);
   document.getElementById('su-appguests').innerHTML = '<option value="">— none —</option>' + mkOpts(sh, dAG);
@@ -607,6 +617,7 @@ function runAnalysis() {
       roomId:   document.getElementById('su-roomid').value,
       rateId:   document.getElementById('su-rateid').value,
       obp:      document.getElementById('su-obp').value,
+      suId:     document.getElementById('su-suid').value,
       propName: document.getElementById('su-propname').value,
       channel:   document.getElementById('su-channel').value,
       appGuests: document.getElementById('su-appguests').value,
@@ -672,11 +683,12 @@ function runAnalysis() {
     const pname = cfg.su.propName  ? String(row[cfg.su.propName]||'')  : '';
     const ch    = cfg.su.channel   ? String(row[cfg.su.channel]||'')   : '';
     const ag    = cfg.su.appGuests ? String(row[cfg.su.appGuests]||'') : '';
+    const suId  = cfg.su.suId      ? String(row[cfg.su.suId]||'')      : '';
 
     // Skip rows for properties not present in CRS data
     if (!rt.propId || !intPropSet.has(rt.propId)) {
       suExcluded++;
-      res.ncrs.push({ _propId: rt.propId || '(empty)', _pname: pname, _ch: ch,
+      res.ncrs.push({ _propId: rt.propId || '(empty)', _pname: pname, _ch: ch, _suId: suId,
         _rm: rm, _rt: rt, _issue: 'Property ID not found in CRS data' });
       continue;
     }
@@ -684,7 +696,7 @@ function runAnalysis() {
     const isYatra = ch === '97';
     const chEntry = CH_MAP.find(c => c.code === ch);
     const chName  = chEntry ? chEntry.name : ch;
-    const base = { _pname: pname, _ch: ch, _chName: chName, _rm: rm, _rt: rt, _obp: obp, _ag: ag };
+    const base = { _pname: pname, _ch: ch, _chName: chName, _suId: suId, _rm: rm, _rt: rt, _obp: obp, _ag: ag };
 
     // Track every property+channel seen in SU (including Yatra) for OTA live check
     if (ch && rt.propId) suChMap.add(`${rt.propId}|${ch}`);
@@ -734,7 +746,7 @@ function runAnalysis() {
     // Track SU rate plans (exclude Yatra)
     suRPSet.add(`${rt.propId}|${rt.roomType}|${rt.rateCode}`);
     suRPChSet.add(`${ch}|${rt.propId}|${rt.roomType}|${rt.rateCode}`);
-    suRPChDataMap.set(`${ch}|${rt.propId}|${rt.roomType}|${rt.rateCode}`, { raw: rt.raw, chName, pname });
+    suRPChDataMap.set(`${ch}|${rt.propId}|${rt.roomType}|${rt.rateCode}`, { raw: rt.raw, chName, pname, suId });
     // Store suffix (4th segment of PMS Rate ID) for reconstructing missing IDs
     const rtSuffix = String(rt.raw || '').split('-')[3] || '';
     if (rtSuffix && !suSuffixMap.has(`${rt.propId}|${rt.roomType}`)) {
@@ -774,7 +786,7 @@ function runAnalysis() {
     if (!intRPSet.has(`${pid}|${rt}|${rc}`)) {
       const d = suRPChDataMap.get(k) || {};
       res.rpex.push({
-        _propId: pid, _pname: d.pname || suNameMap.get(pid) || '',
+        _propId: pid, _pname: d.pname || suNameMap.get(pid) || '', _suId: d.suId || '',
         _chCode: ch, _chName: d.chName || ch,
         _roomType: rt, _rateCode: rc,
         _pmsRateId: d.raw || `${pid}-${rt}-${rc}`,
@@ -825,7 +837,33 @@ const TABS = [
   { k:'ok',     lbl:'All Clear',               cls:'s6', desc:'Rows with no issues detected' },
 ];
 
+// Resolve a row's OTA display name regardless of which check produced it.
+// SU-row checks store _ch (code); reconstructed checks store _chCode.
+function rowOtaName(r) {
+  if (r._chName) return r._chName;
+  const code = String(r._ch || r._chCode || '').trim();
+  const e = CH_MAP.find(c => c.code === code);
+  return e ? e.name : code;
+}
+
+// Populate the OTA filter from the OTAs actually present across all results.
+function populateOtaFilter() {
+  const sel = document.getElementById('otaf');
+  if (!sel) return;
+  const prev = sel.value;
+  const names = new Set();
+  Object.keys(RES).forEach(k => {
+    if (k === 'cfg' || k[0] === '_') return;
+    (RES[k] || []).forEach(r => { const n = rowOtaName(r); if (n) names.add(n); });
+  });
+  const opts = ['<option value="">All OTAs</option>'].concat(
+    [...names].sort().map(n => `<option${n === prev ? ' selected' : ''}>${esc(n)}</option>`)
+  );
+  sel.innerHTML = opts.join('');
+}
+
 function renderStats() {
+  populateOtaFilter();
   const info = document.getElementById('crs-filter-info');
   if (info) {
     const excl = RES._suExcluded || 0;
@@ -849,6 +887,14 @@ function renderTbl() {
   let data = RES[filter] || [];
   if (srch) data = data.filter(r => JSON.stringify(r).toLowerCase().includes(srch));
 
+  const ota = (document.getElementById('otaf') || {}).value || '';
+  if (ota) data = data.filter(r => rowOtaName(r) === ota);
+
+  // SU ID column: only shown for checks whose rows carry an SU ID.
+  const showSuId = (RES[filter] || []).some(r => r._suId != null && String(r._suId).trim() !== '');
+  const suIdTh = showSuId ? '<th>SU ID</th>' : '';
+  const suIdTd = r => showSuId ? `<td class="mono">${esc(r._suId || '')}</td>` : '';
+
   const total = data.length;
   const pages = Math.max(1, Math.ceil(total/pgsz));
   if (pg > pages) pg = pages;
@@ -866,10 +912,11 @@ function renderTbl() {
   let thead='', tbody='';
 
   if (filter === 'rr') {
-    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Room ID</th><th>Room Type (Room)</th><th>PMS Rate ID</th><th>Room Type (Rate)</th><th>Rate Plan</th><th>Issue</th></tr>`;
+    thead = `<tr><th>Property ID</th><th>Property Name</th>${suIdTh}<th>OTA</th><th>Ch Code</th><th>PMS Room ID</th><th>Room Type (Room)</th><th>PMS Rate ID</th><th>Room Type (Rate)</th><th>Rate Plan</th><th>Issue</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="mono">${esc(r._rt.propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td><span class="badge b-blue">${esc(r._chName)}</span></td>
       <td class="mono">${esc(r._ch)}</td>
       <td class="mono">${esc(r._rm.raw)}</td>
@@ -882,10 +929,11 @@ function renderTbl() {
   }
 
   else if (filter === 'obpv') {
-    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>OBP Value (raw)</th><th>Bad Occupancy Values</th></tr>`;
+    thead = `<tr><th>Property ID</th><th>Property Name</th>${suIdTh}<th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>OBP Value (raw)</th><th>Bad Occupancy Values</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="mono">${esc(r._rt.propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td><span class="badge b-blue">${esc(r._chName)}</span></td>
       <td class="mono">${esc(r._ch)}</td>
       <td class="mono">${esc(r._rt.raw)}</td>
@@ -897,10 +945,11 @@ function renderTbl() {
   }
 
   else if (filter === 'obpoe') {
-    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>OBP Occupancies in SU</th><th>Should Be Removed</th></tr>`;
+    thead = `<tr><th>Property ID</th><th>Property Name</th>${suIdTh}<th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>OBP Occupancies in SU</th><th>Should Be Removed</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="mono">${esc(r._rt.propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td><span class="badge b-blue">${esc(r._chName)}</span></td>
       <td class="mono">${esc(r._ch)}</td>
       <td class="mono">${esc(r._rt.raw)}</td>
@@ -913,10 +962,11 @@ function renderTbl() {
   }
 
   else if (filter === 'obpom') {
-    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>OBP Occupancies in SU</th><th>Needs to be Added</th></tr>`;
+    thead = `<tr><th>Property ID</th><th>Property Name</th>${suIdTh}<th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>OBP Occupancies in SU</th><th>Needs to be Added</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="mono">${esc(r._rt.propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td><span class="badge b-blue">${esc(r._chName)}</span></td>
       <td class="mono">${esc(r._ch)}</td>
       <td class="mono">${esc(r._rt.raw)}</td>
@@ -945,10 +995,11 @@ function renderTbl() {
   }
 
   else if (filter === 'rpex') {
-    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type ID</th><th>Rate Plan Code</th><th>Internal Max Occ</th><th>Issue</th></tr>`;
+    thead = `<tr><th>Property ID</th><th>Property Name</th>${suIdTh}<th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type ID</th><th>Rate Plan Code</th><th>Internal Max Occ</th><th>Issue</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="mono">${esc(r._propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td><span class="badge b-pur">${esc(r._chName)}</span></td>
       <td class="mono">${esc(r._chCode)}</td>
       <td class="mono">${esc(r._pmsRateId)}</td>
@@ -960,10 +1011,11 @@ function renderTbl() {
   }
 
   else if (filter === 'apg') {
-    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Rate Plan</th><th>Applicable Guests Value</th><th>Issue</th></tr>`;
+    thead = `<tr><th>Property ID</th><th>Property Name</th>${suIdTh}<th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Rate Plan</th><th>Applicable Guests Value</th><th>Issue</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="mono">${esc(r._rt.propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td><span class="badge b-red">${esc(r._chName)}</span></td>
       <td class="bad">${esc(r._ch)}</td>
       <td class="mono">${esc(r._rt.raw)}</td>
@@ -995,10 +1047,11 @@ function renderTbl() {
       document.getElementById('tbl').innerHTML = `<div class="empty">Dashboard not connected — fetch the Prop Level Dashboard in Step 1 first.</div>`;
       document.getElementById('pgn').innerHTML = ''; return;
     }
-    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>Issue</th></tr>`;
+    thead = `<tr><th>Property ID</th><th>Property Name</th>${suIdTh}<th>OTA</th><th>Ch Code</th><th>PMS Rate ID</th><th>Room Type</th><th>Rate Plan</th><th>Internal Max Occ</th><th>Issue</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="mono">${esc(r._rt.propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td><span class="badge b-amb">${esc(r._chName)}</span></td>
       <td class="mono">${esc(r._ch)}</td>
       <td class="mono">${esc(r._rt.raw)}</td>
@@ -1010,10 +1063,11 @@ function renderTbl() {
   }
 
   else if (filter === 'ncrs') {
-    thead = `<tr><th>Property ID (from SU)</th><th>Property Name</th><th>Channel</th><th>PMS Room ID</th><th>PMS Rate ID</th><th>Reason</th></tr>`;
+    thead = `<tr><th>Property ID (from SU)</th><th>Property Name</th>${suIdTh}<th>Channel</th><th>PMS Room ID</th><th>PMS Rate ID</th><th>Reason</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="bad mono">${esc(r._propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td>${esc(r._ch)}</td>
       <td class="mono">${esc(r._rm.raw)}</td>
       <td class="mono">${esc(r._rt.raw)}</td>
@@ -1022,10 +1076,11 @@ function renderTbl() {
   }
 
   else if (filter === 'ok') {
-    thead = `<tr><th>Property ID</th><th>Property Name</th><th>OTA</th><th>Ch Code</th><th>Room Type</th><th>Rate Plan</th><th>OBP Keys</th><th>PMS Room ID</th><th>PMS Rate ID</th></tr>`;
+    thead = `<tr><th>Property ID</th><th>Property Name</th>${suIdTh}<th>OTA</th><th>Ch Code</th><th>Room Type</th><th>Rate Plan</th><th>OBP Keys</th><th>PMS Room ID</th><th>PMS Rate ID</th></tr>`;
     tbody = slice.map(r => `<tr>
       <td class="mono">${esc(r._rt.propId)}</td>
       <td>${esc(r._pname)}</td>
+      ${suIdTd(r)}
       <td><span class="badge b-grn">${esc(r._chName)}</span></td>
       <td class="mono">${esc(r._ch)}</td>
       <td>${esc(r._rt.roomType)}</td>
@@ -1078,20 +1133,20 @@ function doExport() {
   }
 
   addSheet('Room-Rate Mismatch', RES.rr.map(r => ({
-    'Property ID': r._rt.propId, 'Property Name': r._pname, 'Channel': r._ch,
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'SU ID': r._suId || '', 'Channel': r._ch,
     'PMS Room ID': r._rm.raw, 'Room Type (Room ID)': r._rm.roomType,
     'PMS Rate ID': r._rt.raw, 'Room Type (Rate ID)': r._rt.roomType,
     'Rate Plan Code': r._rt.rateCode, 'Issue': r._issue
   })));
 
   addSheet('OBP Multiplier Issues', RES.obpv.map(r => ({
-    'Property ID': r._rt.propId, 'Property Name': r._pname, 'OTA': r._chName, 'Channel Code': r._ch,
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'SU ID': r._suId || '', 'OTA': r._chName, 'Channel Code': r._ch,
     'PMS Rate ID': r._rt.raw, 'Room Type': r._rt.roomType, 'Rate Plan Code': r._rt.rateCode,
     'OBP Value': JSON.stringify(r._obp), 'Bad Values': r._badVals.map(([k,v])=>`Occ ${k}:${v}`).join(', ')
   })));
 
   const obpoRow = (r, col) => ({
-    'Property ID': r._rt.propId, 'Property Name': r._pname,
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'SU ID': r._suId || '',
     'OTA': r._chName, 'Channel Code': r._ch,
     'PMS Rate ID': r._rt.raw, 'Room Type': r._rt.roomType, 'Rate Plan Code': r._rt.rateCode,
     'Internal Max Occ': r._maxOcc, 'OBP Occupancies in SU': r._obpOccs.join(', '),
@@ -1106,7 +1161,7 @@ function doExport() {
   addSheet('Missing in SU — Other',  RES.rpmi.map(rpmiRow));
 
   addSheet('Rate Plan Extra in SU', RES.rpex.map(r => ({
-    'Property ID': r._propId, 'Property Name': r._pname,
+    'Property ID': r._propId, 'Property Name': r._pname, 'SU ID': r._suId || '',
     'OTA': r._chName, 'Channel Code': r._chCode,
     'PMS Rate ID': r._pmsRateId, 'Room Type ID': r._roomType,
     'Rate Plan Code': r._rateCode, 'Internal Max Occ': r._maxOcc,
@@ -1114,7 +1169,7 @@ function doExport() {
   })));
 
   addSheet('Applicable Guests Issues', RES.apg.map(r => ({
-    'Property ID': r._rt.propId, 'Property Name': r._pname, 'Channel Code': r._ch,
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'SU ID': r._suId || '', 'Channel Code': r._ch,
     'PMS Rate ID': r._rt.raw, 'Rate Plan Code': r._rt.rateCode,
     'Applicable Guests Value': r._ag, 'Issue': r._issue
   })));
@@ -1123,7 +1178,7 @@ function doExport() {
     'Property ID': r._propId, 'Property Name': r._pname, 'OTA': r._chName, 'Channel Code': r._chCode, 'Issue': r._issue
   })));
   addSheet('Mapped OTA Not Live', RES.chdead.map(r => ({
-    'Property ID': r._rt.propId, 'Property Name': r._pname,
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'SU ID': r._suId || '',
     'OTA': r._chName, 'Channel Code': r._ch,
     'PMS Rate ID': r._rt.raw, 'Room Type': r._rt.roomType,
     'Rate Plan': r._rt.rateCode, 'Internal Max Occ': r._maxOcc,
@@ -1131,12 +1186,12 @@ function doExport() {
   })));
 
   addSheet('Not in CRS (Excluded)', RES.ncrs.map(r => ({
-    'Property ID (SU)': r._propId, 'Property Name': r._pname, 'Channel': r._ch,
+    'Property ID (SU)': r._propId, 'Property Name': r._pname, 'SU ID': r._suId || '', 'Channel': r._ch,
     'PMS Room ID': r._rm.raw, 'PMS Rate ID': r._rt.raw, 'Reason': r._issue
   })));
 
   addSheet('All Clear', RES.ok.map(r => ({
-    'Property ID': r._rt.propId, 'Property Name': r._pname,
+    'Property ID': r._rt.propId, 'Property Name': r._pname, 'SU ID': r._suId || '',
     'OTA': r._chName, 'Channel Code': r._ch,
     'Room Type': r._rt.roomType, 'Rate Plan Code': r._rt.rateCode,
     'PMS Room ID': r._rm.raw, 'PMS Rate ID': r._rt.raw,
