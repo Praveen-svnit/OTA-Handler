@@ -61,7 +61,7 @@
   };
 
   // ── Per-channel session state (filters, drill-down etc.) ─────────────────
-  const STATE = { bcom: {}, gommt: {} };
+  const STATE = { bcom: {}, gommt: {}, gmb: {} };
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   function colIdx(letter) {
