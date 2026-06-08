@@ -52,6 +52,110 @@ function doGet(e) {
   }
 }
 
+// ── POST entry — used for saving Mapping Checker runs (large payloads) ────
+function doPost(e) {
+  try {
+    const action = (e && e.parameter && e.parameter.action) || '';
+    const body = (e && e.postData && e.postData.contents) ? JSON.parse(e.postData.contents) : {};
+    if (action === 'save_mapping_run') {
+      return jsonResponse({ ok: true, data: saveMappingRun(body) });
+    }
+    return jsonResponse({ ok: false, error: 'Unknown POST action: ' + action });
+  } catch (err) {
+    return jsonResponse({ ok: false, error: String(err && err.message || err) });
+  }
+}
+
+// Append a summary row to LOG_TAB and overwrite DETAIL_TAB with flattened rows.
+// Body shape: { runBy, fileName, meta:{...counts}, results:{ rr:[...], obpv:[...], ... } }
+function saveMappingRun(body) {
+  const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata',
+                                  'yyyy-MM-dd HH:mm');
+  const runBy = body.runBy || 'anonymous';
+  const fileName = body.fileName || '';
+  const meta = body.meta || {};
+  const results = body.results || {};
+
+  const ss = SpreadsheetApp.openById(CRS_SHEET_ID);
+
+  // ── 1. LOG_TAB summary row ──────────────────────────────────────────────
+  const SUMMARY_HEADERS = [
+    'Run At', 'Run By', 'File Name',
+    'CRS Properties', 'SU Analyzed', 'Excluded',
+    'rr', 'apg', 'obpv', 'obpoe', 'obpom',
+    'rpmicp', 'rpmimap', 'rpmi', 'rpex',
+    'chlive', 'chdead', 'ncrs',
+  ];
+  const CHECK_KEYS = ['rr','apg','obpv','obpoe','obpom','rpmicp','rpmimap','rpmi','rpex','chlive','chdead','ncrs'];
+
+  let logWs = ss.getSheetByName(LOG_TAB);
+  if (!logWs) {
+    logWs = ss.insertSheet(LOG_TAB);
+    logWs.appendRow(SUMMARY_HEADERS);
+  } else if (logWs.getLastRow() === 0) {
+    logWs.appendRow(SUMMARY_HEADERS);
+  }
+  logWs.appendRow([
+    ts, runBy, fileName,
+    meta.crs_props || '', meta.total_analyzed || '', meta.su_excluded || '',
+    (results.rr || []).length,
+    (results.apg || []).length,
+    (results.obpv || []).length,
+    (results.obpoe || []).length,
+    (results.obpom || []).length,
+    (results.rpmicp || []).length,
+    (results.rpmimap || []).length,
+    (results.rpmi || []).length,
+    (results.rpex || []).length,
+    (results.chlive || []).length,
+    (results.chdead || []).length,
+    (results.ncrs || []).length,
+  ]);
+
+  // ── 2. DETAIL_TAB — overwrite with flattened rows ───────────────────────
+  // Flatten { rr:[{...}], ... } → [{ Run At, Run By, Check, ...row }, ...]
+  // Then bulk-write as a 2-D array (way faster than appendRow per row).
+  const fieldSet = new Set(['Run At', 'Run By', 'Check']);
+  const flat = [];
+  CHECK_KEYS.forEach(k => {
+    const arr = results[k] || [];
+    arr.forEach(row => {
+      const flatRow = { 'Run At': ts, 'Run By': runBy, 'Check': k };
+      Object.keys(row).forEach(key => {
+        // Skip internal helper objects (the engine uses _rm / _rt with nested data)
+        let v = row[key];
+        if (v && typeof v === 'object') v = JSON.stringify(v);
+        flatRow[key] = v == null ? '' : v;
+        fieldSet.add(key);
+      });
+      flat.push(flatRow);
+    });
+  });
+
+  let detailWs = ss.getSheetByName(DETAIL_TAB);
+  if (!detailWs) {
+    detailWs = ss.insertSheet(DETAIL_TAB);
+  }
+  detailWs.clear();
+
+  const detailHeaders = Array.from(fieldSet);
+  if (flat.length === 0) {
+    detailWs.getRange(1, 1, 1, 4).setValues([['Run At', 'Run By', 'Check', 'Note']]);
+    detailWs.getRange(2, 1, 1, 4).setValues([[ts, runBy, '—', 'No issues found']]);
+  } else {
+    const data = [detailHeaders];
+    flat.forEach(row => {
+      data.push(detailHeaders.map(h => row[h] == null ? '' : row[h]));
+    });
+    detailWs.getRange(1, 1, data.length, detailHeaders.length).setValues(data);
+  }
+
+  // Invalidate the cached reads so the next GET picks up the new data
+  CacheService.getScriptCache().removeAll(['log', 'details']);
+
+  return { savedAt: ts, totalRows: flat.length };
+}
+
 // ── Router ─────────────────────────────────────────────────────────────────
 function route(action, p, refresh) {
   switch (action) {

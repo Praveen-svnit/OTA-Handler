@@ -48,6 +48,25 @@ const API = (() => {
 
   function clearMem() { memCache.clear(); }
 
+  // ── POST helper (for endpoints that take a large JSON body) ──────────────
+  // GAS web-app POST is intentionally a no-preflight request: content-type is
+  // text/plain so the browser doesn't trigger CORS preflight (Apps Script
+  // doesn't respond to OPTIONS). The server still parses postData.contents
+  // as JSON.
+  function callPost(action, body) {
+    const url = GAS_URL + '?action=' + encodeURIComponent(action);
+    return fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(body || {}),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    })
+      .then(r => r.json())
+      .then(payload => {
+        if (!payload.ok) throw new Error(payload.error || 'Unknown error');
+        return payload.data;
+      });
+  }
+
   // Convenience wrappers per endpoint
   return {
     ping:        ()        => call('ping'),
@@ -65,6 +84,7 @@ const API = (() => {
     dashboard:   (opts)    => call('dashboard', {}, opts),
     log:         (opts)    => call('log', {}, opts),
     details:     (opts)    => call('details', {}, opts),
+    saveMappingRun: (body) => callPost('save_mapping_run', body),
     clearMem,
     getUrl: () => GAS_URL,
   };

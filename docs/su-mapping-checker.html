@@ -1114,8 +1114,129 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Auto-fetch dashboard and CRS data on load
-window.addEventListener('load', () => { /* URLs entered by user — fetch buttons trigger load */ });
+// ── Shared / persisted results (Phase 2 add-on) ──────────────────────────
+// The last run's results are auto-saved to the CRS sheet so the whole team
+// sees the same view without re-uploading. On page load we hydrate RES from
+// the saved data and jump straight to the results pane.
+
+async function autoSaveRun() {
+  if (!RES) return;
+  // Strip the heavy cfg object from each result row before serialising; the
+  // table renderers don't read cfg at view time.
+  const payloadResults = {};
+  Object.keys(RES).forEach(k => {
+    if (k === 'cfg' || k.indexOf('_') === 0) return;
+    payloadResults[k] = RES[k] || [];
+  });
+  const meta = {
+    crs_props:      RES._crsProps,
+    su_excluded:    RES._suExcluded,
+    total_analyzed: (F.su && F.su.data) ? F.su.data.length : 0,
+  };
+  const body = {
+    runBy:    (window.localStorage.getItem('mapping_run_by') || 'anonymous'),
+    fileName: (F.su && F.su.file) || '',
+    meta:     meta,
+    results:  payloadResults,
+  };
+  try {
+    await API.saveMappingRun(body);
+    const note = document.createElement('div');
+    note.textContent = '✓ Results saved — visible to all team members';
+    note.style.cssText = 'font-size:12px;color:#0f9d58;margin:8px 0';
+    const head = document.querySelector('#p3 .card');
+    if (head) head.insertBefore(note, head.firstChild);
+  } catch (e) {
+    console.warn('Save failed:', e);
+  }
+}
+
+async function hydrateFromSavedRun() {
+  try {
+    const [log, details] = await Promise.all([API.log(), API.details()]);
+    if (!details || !details.rows || details.rows.length === 0) return false;
+
+    // Reconstruct RES from the flat details rows. Each detail row is tagged
+    // with its check key in the `Check` column.
+    const cols = details.cols;
+    const checkIdx = cols.indexOf('Check');
+    if (checkIdx === -1) return false;
+
+    const res = {
+      rr: [], obpv: [], obpoe: [], obpom: [],
+      rpmicp: [], rpmimap: [], rpmi: [], rpex: [],
+      apg: [], chlive: [], chdead: [], ncrs: [], ok: [],
+      cfg: {},
+    };
+    details.rows.forEach(row => {
+      const check = String(row[checkIdx] || '').trim();
+      if (!res[check]) return;
+      const obj = {};
+      cols.forEach((c, i) => {
+        if (c === 'Check' || c === 'Run At' || c === 'Run By') return;
+        obj[c] = row[i] == null ? '' : row[i];
+      });
+      res[check].push(obj);
+    });
+
+    // Pull meta from the last summary row, if present
+    if (log && log.rows && log.rows.length) {
+      const lastRow = log.rows[log.rows.length - 1];
+      const lcols = log.cols;
+      const get = (name) => {
+        const i = lcols.indexOf(name);
+        return i === -1 ? '' : lastRow[i];
+      };
+      res._crsProps = parseInt(get('CRS Properties')) || 0;
+      res._suExcluded = parseInt(get('Excluded')) || 0;
+
+      // Banner with run metadata
+      const ts   = get('Run At');
+      const by   = get('Run By');
+      const file = get('File Name');
+      const banner = document.createElement('div');
+      banner.style.cssText = 'background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;'
+        + 'padding:10px 14px;border-radius:6px;margin:0 0 14px;font-size:13px';
+      banner.innerHTML = '📌 Showing latest saved run from <b>' + esc(by) + '</b> at <b>'
+        + esc(ts) + '</b>'
+        + (file ? ' &middot; file: <code>' + esc(file) + '</code>' : '')
+        + ' — <a href="#" id="newRunBtn" style="color:#3730a3;text-decoration:underline">Upload a different file</a>';
+      const card = document.querySelector('#p3 .card');
+      if (card) card.insertBefore(banner, card.firstChild);
+      // Wire the inline "Upload a different file" link
+      setTimeout(() => {
+        const a = document.getElementById('newRunBtn');
+        if (a) a.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          go(1);
+        });
+      }, 0);
+    }
+
+    RES = res;
+    filter = 'rr'; pg = 1;
+    go(3);
+    renderStats();
+    renderTbl();
+    return true;
+  } catch (e) {
+    console.warn('Hydrate failed:', e);
+    return false;
+  }
+}
+
+// Override runAnalysis to auto-save after it succeeds
+(function () {
+  const _origRunAnalysis = runAnalysis;
+  window.runAnalysis = function () {
+    _origRunAnalysis.apply(this, arguments);
+    // runAnalysis is synchronous; RES is now set
+    autoSaveRun();
+  };
+})();
+
+// On load: try to hydrate from saved run. If nothing exists, stay on step 1.
+window.addEventListener('load', () => { hydrateFromSavedRun(); });
 </script>
 </body>
 </html>

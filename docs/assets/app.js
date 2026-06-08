@@ -10,7 +10,8 @@
   Router.register(window.PAGE_GMB);
   Router.register(window.PAGE_LISTING);
   Router.register(window.PAGE_MAPPING);
-  Router.register(window.PAGE_LAST_CHECKED);
+  // Last Checked retired — its functionality is now baked into Mapping Checker
+  // (latest run is auto-loaded on open + auto-saved on Run Analysis).
   Router.start();
 
   // Friendly hint if the GAS URL hasn't been configured yet
