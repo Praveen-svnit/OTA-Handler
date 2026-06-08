@@ -383,7 +383,86 @@
     // change this freely and select any columns from the sheet.
     const defaultMx = cfg.matrixLetters.map(L => cols[colIdx(L)] || null).filter(Boolean);
     const half = Math.ceil(defaultMx.length / 2);
-    state.mx = state.mx || {
+
+    // ── Persistent defaults ──────────────────────────────────────────────
+    // Saved in localStorage as {rowCols, colCols, filterCols, filters,
+    // hideZero, _positions} — _positions stores the col INDEX for each
+    // saved name, used as a fallback if a column was renamed/shifted.
+    const LS_KEY = 'mx_defaults_' + cfg.title.toLowerCase().replace(/\W/g, '_');
+
+    function loadDefaults() {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return null;
+        const saved = JSON.parse(raw);
+        const pos = saved._positions || {};
+
+        // Resolve a saved column to a current column: try name first,
+        // then fall back to the stored position. Returns null if neither works.
+        const resolve = (name) => {
+          if (cols.includes(name)) return name;
+          const idx = pos[name];
+          if (idx != null && idx >= 0 && idx < cols.length) return cols[idx];
+          return null;
+        };
+        const resolveList = (arr) => (arr || []).map(resolve).filter(Boolean);
+
+        const rowCols    = resolveList(saved.rowCols);
+        const colCols    = resolveList(saved.colCols);
+        const filterCols = resolveList(saved.filterCols);
+
+        // Filter values: copy entries only for columns that still exist
+        const filters = {};
+        Object.keys(saved.filters || {}).forEach(k => {
+          const live = resolve(k);
+          if (live && Array.isArray(saved.filters[k])) {
+            filters[live] = saved.filters[k];
+          }
+        });
+
+        return {
+          rowCols, colCols, filterCols, filters,
+          hideZero: saved.hideZero !== false,
+          drillIdx: null,
+        };
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function saveDefaults() {
+      const positions = {};
+      const collect = (c) => { positions[c] = cols.indexOf(c); };
+      mx.rowCols.forEach(collect);
+      mx.colCols.forEach(collect);
+      mx.filterCols.forEach(collect);
+      Object.keys(mx.filters).forEach(collect);
+
+      const blob = {
+        rowCols: mx.rowCols,
+        colCols: mx.colCols,
+        filterCols: mx.filterCols,
+        filters: mx.filters,
+        hideZero: mx.hideZero,
+        _positions: positions,
+        _savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(LS_KEY, JSON.stringify(blob));
+      UI.toast('Defaults saved for ' + cfg.title);
+    }
+
+    function clearDefaults() {
+      localStorage.removeItem(LS_KEY);
+      // Reset state in memory so next render uses the channel's built-in defaults
+      delete state.mx;
+      UI.toast('Defaults cleared');
+      body.innerHTML = '';
+      renderMatrix(body, cfg, state, cols, records);
+    }
+
+    // Initialize state: prefer localStorage defaults, then in-memory state,
+    // then the channel config defaults.
+    state.mx = state.mx || loadDefaults() || {
       rowCols: defaultMx.slice(0, half),
       colCols: defaultMx.slice(half),
       filterCols: [],
@@ -442,7 +521,7 @@
     const filterHost = UI.el('div', { class: 'filters' });
     body.appendChild(filterHost);
 
-    const toggleRow = UI.el('div', { style: 'margin:6px 0 10px' });
+    const toggleRow = UI.el('div', { style: 'display:flex;align-items:center;gap:14px;margin:6px 0 10px' });
     const hideToggle = UI.el('label', { class: 'toggle' }, [
       UI.el('input', { type: 'checkbox',
         onChange: (e) => { mx.hideZero = e.target.checked; redraw(); } }),
@@ -450,6 +529,16 @@
     ]);
     hideToggle.querySelector('input').checked = mx.hideZero;
     toggleRow.appendChild(hideToggle);
+    toggleRow.appendChild(UI.el('button', {
+      class: 'btn btn-sm', onClick: saveDefaults,
+      title: 'Persist current Rows / Columns / Filters and their selected values across refreshes',
+    }, 'Save as default'));
+    if (localStorage.getItem(LS_KEY)) {
+      toggleRow.appendChild(UI.el('button', {
+        class: 'btn btn-sm', onClick: clearDefaults,
+        title: 'Remove saved defaults — Matrix will fall back to channel built-ins',
+      }, 'Clear default'));
+    }
     body.appendChild(toggleRow);
 
     const tableHost = UI.el('div');
