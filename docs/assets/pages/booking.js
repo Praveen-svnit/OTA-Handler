@@ -618,10 +618,11 @@
         if (ok) matches.push(records[idx]);
       }
 
-      const propIdCol = cols[0];
-      const channelIdCol = cols[3];
-      const nameCol = cols.find(c => c.toLowerCase().includes('name'));
-      const showCols = Array.from(new Set([propIdCol, channelIdCol, nameCol, ...rowCols].filter(Boolean)));
+      // Show: first 3 columns of the sheet (Prop ID, Prop Name, City) + every
+      // column currently used in the pivot (Rows + Columns + Filters).
+      const baseCols = cols.slice(0, 3);
+      const pivotCols = [...(mx.rowCols || []), ...(mx.colCols || []), ...(mx.filterCols || [])];
+      const showCols = Array.from(new Set([...baseCols, ...pivotCols].filter(Boolean)));
 
       drillHost.appendChild(UI.el('div', { class: 'stats' },
         rowCols.map(c => `<b>${UI.escapeHtml(c)}</b>: ${UI.escapeHtml(picked[c])}`).join(' · ') +
