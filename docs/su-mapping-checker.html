@@ -1240,13 +1240,27 @@ async function hydrateFromSavedRun() {
       apg: [], chlive: [], chdead: [], ncrs: [], ok: [],
       cfg: {},
     };
+    // Helper: re-parse JSON-stringified nested objects/arrays.
+    // The save path stringifies any non-string value going into a cell.
+    // The renderer expects nested objects (e.g. r._rm.raw, r._rt.propId).
+    // Without this step, those nested lookups all resolve to "undefined".
+    function maybeParse(v) {
+      if (typeof v !== 'string') return v;
+      const trimmed = v.trim();
+      if (!trimmed) return v;
+      const c = trimmed[0];
+      if (c !== '{' && c !== '[') return v;
+      try { return JSON.parse(trimmed); } catch (_) { return v; }
+    }
+
     details.rows.forEach(row => {
       const check = String(row[checkIdx] || '').trim();
       if (!res[check]) return;
       const obj = {};
       cols.forEach((c, i) => {
         if (c === 'Check' || c === 'Run At' || c === 'Run By') return;
-        obj[c] = row[i] == null ? '' : row[i];
+        const raw = row[i] == null ? '' : row[i];
+        obj[c] = maybeParse(raw);
       });
       res[check].push(obj);
     });
