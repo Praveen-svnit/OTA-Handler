@@ -286,6 +286,8 @@ td.mono { font-family: monospace; font-size: 11px; color: #555; }
         <div class="card-title" id="res-title" style="margin:0">Results</div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-out btn-sm" onclick="go(2)">← Configure</button>
+          <button class="btn btn-out btn-sm" onclick="autoSaveRun(true)" title="Save results to the shared sheet so the whole team can see them">Save to team</button>
+          <button class="btn btn-out btn-sm" onclick="go(1)" title="Upload a different SU file and run a fresh check">Upload new file</button>
           <button class="btn btn-green btn-sm" onclick="doExport()">Export to Excel</button>
         </div>
       </div>
@@ -1119,8 +1121,34 @@ function esc(s) {
 // sees the same view without re-uploading. On page load we hydrate RES from
 // the saved data and jump straight to the results pane.
 
-async function autoSaveRun() {
-  if (!RES) return;
+function setSaveBanner(text, kind) {
+  // Replace any existing save banner with one of three colors:
+  // kind = 'info' (blue) | 'ok' (green) | 'err' (red)
+  const card = document.querySelector('#p3 .card');
+  if (!card) return;
+  let prev = document.getElementById('saveBanner');
+  if (prev) prev.remove();
+  const colors = {
+    info: { bg: '#eff6ff', bd: '#bfdbfe', fg: '#1e40af' },
+    ok:   { bg: '#ecfdf5', bd: '#a7f3d0', fg: '#065f46' },
+    err:  { bg: '#fef2f2', bd: '#fecaca', fg: '#991b1b' },
+  };
+  const c = colors[kind] || colors.info;
+  const b = document.createElement('div');
+  b.id = 'saveBanner';
+  b.style.cssText = `background:${c.bg};border:1px solid ${c.bd};color:${c.fg};`
+    + 'padding:10px 14px;border-radius:6px;margin:0 0 14px;font-size:13px';
+  b.innerHTML = text;
+  card.insertBefore(b, card.firstChild);
+}
+
+async function autoSaveRun(manual) {
+  if (!RES) {
+    if (manual) setSaveBanner('Nothing to save yet — run a check first.', 'err');
+    return;
+  }
+  setSaveBanner('Saving results to the shared sheet…', 'info');
+
   // Strip the heavy cfg object from each result row before serialising; the
   // table renderers don't read cfg at view time.
   const payloadResults = {};
@@ -1140,14 +1168,23 @@ async function autoSaveRun() {
     results:  payloadResults,
   };
   try {
-    await API.saveMappingRun(body);
-    const note = document.createElement('div');
-    note.textContent = '✓ Results saved — visible to all team members';
-    note.style.cssText = 'font-size:12px;color:#0f9d58;margin:8px 0';
-    const head = document.querySelector('#p3 .card');
-    if (head) head.insertBefore(note, head.firstChild);
+    const res = await API.saveMappingRun(body);
+    const when = res && res.savedAt ? ' at ' + esc(res.savedAt) : '';
+    setSaveBanner('✓ Saved — visible to all team members' + when, 'ok');
   } catch (e) {
-    console.warn('Save failed:', e);
+    const msg = (e && e.message) ? e.message : String(e);
+    setSaveBanner(
+      '<b>Could not save results to the shared sheet.</b><br>' + esc(msg) +
+      '<br><br>This usually means the Google Apps Script backend hasn\'t been ' +
+      'redeployed with the new <code>save_mapping_run</code> action. ' +
+      'See the README in the repo, or click <a href="#" id="retrySave" ' +
+      'style="color:#991b1b;text-decoration:underline">Retry</a>.',
+      'err'
+    );
+    setTimeout(() => {
+      const r = document.getElementById('retrySave');
+      if (r) r.addEventListener('click', (ev) => { ev.preventDefault(); autoSaveRun(true); });
+    }, 0);
   }
 }
 
@@ -1235,8 +1272,37 @@ async function hydrateFromSavedRun() {
   };
 })();
 
-// On load: try to hydrate from saved run. If nothing exists, stay on step 1.
-window.addEventListener('load', () => { hydrateFromSavedRun(); });
+function showStep1Hint(text, kind) {
+  // Pinned info banner on step 1 so the user understands why they're here
+  let prev = document.getElementById('step1Hint');
+  if (prev) prev.remove();
+  const colors = {
+    info: { bg: '#eff6ff', bd: '#bfdbfe', fg: '#1e40af' },
+    warn: { bg: '#fffbeb', bd: '#fde68a', fg: '#92400e' },
+  };
+  const c = colors[kind] || colors.info;
+  const b = document.createElement('div');
+  b.id = 'step1Hint';
+  b.style.cssText = `background:${c.bg};border:1px solid ${c.bd};color:${c.fg};`
+    + 'padding:10px 14px;border-radius:6px;margin:0 0 14px;font-size:13px';
+  b.innerHTML = text;
+  const pane = document.getElementById('p1');
+  if (pane) pane.insertBefore(b, pane.firstChild);
+}
+
+// On load: try to hydrate from saved run. If nothing exists, show a clear
+// info banner on step 1 explaining what to do.
+window.addEventListener('load', async () => {
+  const ok = await hydrateFromSavedRun();
+  if (!ok) {
+    showStep1Hint(
+      'No saved run found yet. Upload an SU export, fetch CRS, click ' +
+      '<b>Run Analysis</b>, and the results will be saved automatically so the ' +
+      'whole team sees the same view on next refresh.',
+      'info'
+    );
+  }
+});
 </script>
 </body>
 </html>
