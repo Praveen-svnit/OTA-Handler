@@ -161,7 +161,27 @@
       return;
     }
     const cols = p.cols;
-    const allRecords = UI.toRecords(p);
+
+    // ── PERF: cache records ONCE per data load (was the biggest bottleneck) ──
+    // toRecords on 17k rows × 60 cols ~ 1M property writes. Doing it on every
+    // render made tab switches/filters feel slow. Cache on payload itself.
+    if (!p._records) p._records = UI.toRecords(p);
+    const allRecords = p._records;
+
+    // ── PERF: pre-strip column values lazily, cache per column ──
+    // strip(r[c]) being called inside the pivot loops adds up to millions of
+    // String/trim calls. Cache stripped arrays per column on first request.
+    if (!p._strip) p._strip = {};
+    function getStripped(col) {
+      if (p._strip[col]) return p._strip[col];
+      const arr = new Array(allRecords.length);
+      for (let i = 0; i < allRecords.length; i++) {
+        const v = allRecords[i][col];
+        arr[i] = v == null ? '' : String(v).trim();
+      }
+      p._strip[col] = arr;
+      return arr;
+    }
 
     const s = state.summary = state.summary || {};
     s.rows = s.rows || '';
@@ -258,9 +278,12 @@
     // ── Filter widgets (rebuilt when filter columns change) ──
     function buildFilters() {
       filterVals.innerHTML = '';
-      const recs = (state._summaryCache && state._summaryCache.allRecords) || allRecords;
       s.filterCols.forEach(c => {
-        const vals = Array.from(new Set(recs.map(r => strip(r[c])))).sort();
+        // PERF: use cached stripped column instead of stripping on every call
+        const stripped = getStripped(c);
+        const set = new Set();
+        for (let i = 0; i < stripped.length; i++) set.add(stripped[i]);
+        const vals = Array.from(set).sort();
         const wrap = UI.el('div', { style: 'margin-top:6px' });
         wrap.appendChild(UI.el('div', { style: 'font-size:11px;font-weight:500;color:#52525b;margin-bottom:2px' }, c));
         const ms = UI.multiselect({
@@ -273,14 +296,32 @@
       });
     }
 
+    function filteredRecordIndices() {
+      // PERF: return indices instead of records — avoids object allocation
+      const activeFilters = s.filterCols
+        .map(c => ({ col: c, sel: s.filters[c], stripped: getStripped(c) }))
+        .filter(f => f.sel && f.sel.length);
+      if (!activeFilters.length) {
+        const idx = new Array(allRecords.length);
+        for (let i = 0; i < idx.length; i++) idx[i] = i;
+        return idx;
+      }
+      const selSets = activeFilters.map(f => new Set(f.sel));
+      const out = [];
+      for (let i = 0; i < allRecords.length; i++) {
+        let ok = true;
+        for (let k = 0; k < activeFilters.length; k++) {
+          if (!selSets[k].has(activeFilters[k].stripped[i])) { ok = false; break; }
+        }
+        if (ok) out.push(i);
+      }
+      return out;
+    }
     function filteredRecords() {
-      const recs = (state._summaryCache && state._summaryCache.allRecords) || allRecords;
-      let v = recs;
-      s.filterCols.forEach(c => {
-        const sel = s.filters[c];
-        if (sel && sel.length) v = v.filter(r => sel.includes(strip(r[c])));
-      });
-      return v;
+      const idx = filteredRecordIndices();
+      const out = new Array(idx.length);
+      for (let i = 0; i < idx.length; i++) out[i] = allRecords[idx[i]];
+      return out;
     }
 
     // ── Pivot computation ──
@@ -296,14 +337,20 @@
         return;
       }
 
-      const filtered = filteredRecords();
+      // PERF: work with filtered indices + cached stripped columns
+      const filteredIdx = filteredRecordIndices();
+      const rowStripped = rowCols.map(c => getStripped(c));
+      const colStripped = colCols.map(c => getStripped(c));
+
       if (!colCols.length) {
         // Simple row grouping
         const grp = new Map();
-        filtered.forEach(r => {
-          const k = rowCols.map(c => strip(r[c])).join('||');
+        for (let i = 0; i < filteredIdx.length; i++) {
+          const idx = filteredIdx[i];
+          let k = rowStripped[0][idx];
+          for (let j = 1; j < rowStripped.length; j++) k += '||' + rowStripped[j][idx];
           grp.set(k, (grp.get(k) || 0) + 1);
-        });
+        }
         const rows = Array.from(grp.entries()).map(([k, n]) => {
           const parts = k.split('||');
           const row = { _count: n };
@@ -320,24 +367,27 @@
           columns: rowCols.map(c => ({ key: c, label: c }))
             .concat([{ key: '_count', label: 'Count', fmt: v => v.toLocaleString(), cellClass: () => 'count-cell num' }]),
           rows, totalRow, selectedRow: state.drillIdx,
-          onRowClick: (r, i) => { state.drillIdx = i; showDrill(r, filtered, rowCols); },
+          onRowClick: (r, i) => { state.drillIdx = i; showDrill(r, filteredRecords(), rowCols); },
         }));
-        if (state.drillIdx != null && rows[state.drillIdx]) showDrill(rows[state.drillIdx], filtered, rowCols);
+        if (state.drillIdx != null && rows[state.drillIdx]) showDrill(rows[state.drillIdx], filteredRecords(), rowCols);
         else drillHost.innerHTML = '';
         return;
       }
 
-      // Cross-tab
+      // Cross-tab (PERF: use cached stripped columns + index loop)
       const rowGrp = new Map(), colGrp = new Map(), cellMap = new Map();
       const valCol = s.val || cols[0];
-      filtered.forEach(r => {
-        const rk = rowCols.map(c => strip(r[c])).join('||');
-        const ck = colCols.map(c => strip(r[c])).join('||');
+      for (let i = 0; i < filteredIdx.length; i++) {
+        const idx = filteredIdx[i];
+        let rk = rowStripped[0][idx];
+        for (let j = 1; j < rowStripped.length; j++) rk += '||' + rowStripped[j][idx];
+        let ck = colStripped[0][idx];
+        for (let j = 1; j < colStripped.length; j++) ck += '||' + colStripped[j][idx];
         rowGrp.set(rk, (rowGrp.get(rk) || 0) + 1);
         colGrp.set(ck, (colGrp.get(ck) || 0) + 1);
         const cellKey = rk + '||' + ck;
         cellMap.set(cellKey, (cellMap.get(cellKey) || 0) + 1);
-      });
+      }
 
       const rowKeys = Array.from(rowGrp.keys()).sort();
       const colKeys = Array.from(colGrp.keys()).sort();
@@ -375,9 +425,9 @@
         (colKeys.length > 60 ? ' (top 60 shown)' : '')));
       tableHost.appendChild(UI.table({
         columns: hdrs, rows, totalRow, selectedRow: state.drillIdx,
-        onRowClick: (r, i) => { state.drillIdx = i; showDrillCross(r, filtered, rowCols); },
+        onRowClick: (r, i) => { state.drillIdx = i; showDrillCross(r, filteredRecords(), rowCols); },
       }));
-      if (state.drillIdx != null && rows[state.drillIdx]) showDrillCross(rows[state.drillIdx], filtered, rowCols);
+      if (state.drillIdx != null && rows[state.drillIdx]) showDrillCross(rows[state.drillIdx], filteredRecords(), rowCols);
       else drillHost.innerHTML = '';
     }
 
