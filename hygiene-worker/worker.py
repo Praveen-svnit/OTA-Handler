@@ -7,16 +7,20 @@ OTA Tracker's Apps Script backend for hygiene-scrape jobs they queued, scrapes
 each property inside the trusted browser, and posts results back (Apps Script
 writes the BDC Hygiene Sheet).
 
+Shared pool: the whole team uses one Booking.com account, so any worker can run
+any queued job. There's no per-person name — every PC uses the SAME .env
+(GAS_URL + WORKER_TOKEN). This machine labels itself by PC name in the log only.
+
 One-time setup per PC:
   1. Run launch-chrome.bat  (opens Chrome with a debug port + a dedicated
      'bdc-profile'); log into Booking.com once in that window.
-  2. Fill .env (copy from .env.example): WORKER_NAME must equal the name you
-     type on the Hygiene Scrape page (that's how jobs are routed to you).
+  2. Drop in the shared .env (copy from .env.example): GAS_URL + WORKER_TOKEN.
   3. Run start-worker.bat.
 """
 
 import asyncio
 import os
+import socket
 import sys
 
 import httpx
@@ -38,7 +42,9 @@ load_dotenv()
 # The Google Apps Script web-app /exec URL (same one assets/api.js uses).
 GAS_URL        = os.environ.get("GAS_URL", "").rstrip("/")
 WORKER_TOKEN   = os.environ.get("WORKER_TOKEN", "")
-WORKER_NAME    = os.environ.get("WORKER_NAME", "").strip()
+# Shared pool: a name isn't needed for routing. We only use an id to label this
+# machine in the activity log — default to the PC name so .env needs no name.
+WORKER_NAME    = os.environ.get("WORKER_NAME", "").strip() or os.environ.get("COMPUTERNAME", "") or socket.gethostname()
 CDP_PORT       = os.environ.get("CDP_PORT", "9222")
 POLL_INTERVAL  = float(os.environ.get("POLL_INTERVAL", "4"))
 JOB_TIMEOUT    = int(os.environ.get("JOB_TIMEOUT", "120"))
@@ -171,8 +177,8 @@ async def process_job(context, job: dict):
 async def run():
     global _http
 
-    if not GAS_URL or not WORKER_TOKEN or not WORKER_NAME:
-        banner("❌ Set GAS_URL, WORKER_TOKEN and WORKER_NAME in .env first.")
+    if not GAS_URL or not WORKER_TOKEN:
+        banner("❌ Set GAS_URL and WORKER_TOKEN in .env first.")
         return
 
     banner(f"🤖 BDC Hygiene worker '{WORKER_NAME}' → {GAS_URL}")

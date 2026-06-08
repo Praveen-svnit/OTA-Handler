@@ -85,9 +85,9 @@ const API = (() => {
     log:         (opts)    => call('log', {}, opts),
     details:     (opts)    => call('details', {}, opts),
     saveMappingRun: (body) => callPost('save_mapping_run', body),
-    // Hygiene scrape queue (page side)
-    hygJobs:        (worker) => call('hyg_jobs', { worker }, { refresh: true }),
-    hygEnqueue:     (body)   => callPost('hyg_enqueue', body),
+    // Hygiene scrape queue (page side) — shared pool, no per-user routing
+    hygJobs:        ()     => call('hyg_jobs', {}, { refresh: true }),
+    hygEnqueue:     (body) => callPost('hyg_enqueue', body),
     clearMem,
     getUrl: () => GAS_URL,
   };

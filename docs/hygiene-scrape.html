@@ -58,22 +58,12 @@ td.mono{font-family:monospace}
   </div>
 
   <div id="worker-banner" class="banner err">
-    <span style="font-size:16px">🔴</span>
-    <span>Enter your name below — it must match the <code>WORKER_NAME</code> in your local worker.</span>
+    <span style="font-size:16px">⏳</span>
+    <span>Checking for online workers…</span>
   </div>
 
   <div class="card">
-    <div class="name-row">
-      <div>
-        <label>Your name (worker)</label>
-        <input type="text" id="worker" placeholder="e.g. Praveen" autocomplete="off">
-      </div>
-      <div class="muted" style="flex:1;font-size:11.5px;padding-bottom:9px">
-        Jobs you queue are routed to the worker running on your PC with this exact name.
-      </div>
-    </div>
-
-    <div style="margin-top:14px">
+    <div>
       <label>Booking.com IDs (one per line, or comma / space separated)</label>
       <textarea id="ids" rows="5" placeholder="123456&#10;789012&#10;…"></textarea>
     </div>
@@ -93,7 +83,7 @@ td.mono{font-family:monospace}
           <tr><th>BDC ID</th><th>Property</th><th>Status</th><th>Last update / log</th><th>When</th></tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="5" class="empty">Enter your name, paste BDC IDs, and click Start Scrape.</td></tr>
+          <tr><td colspan="5" class="empty">Paste BDC IDs and click Start Scrape.</td></tr>
         </tbody>
       </table>
     </div>
@@ -114,24 +104,16 @@ const ORDER = ['pending','claimed','running','needs_login','done','error'];
 const $ = (id) => document.getElementById(id);
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-const workerInput = $('worker');
-workerInput.value = localStorage.getItem('hyg_worker') || '';
-workerInput.addEventListener('input', () => {
-  localStorage.setItem('hyg_worker', workerInput.value.trim());
-});
-
 $('start').addEventListener('click', start);
 
 async function start(){
-  const worker = workerInput.value.trim();
-  if (!worker){ setFeedback('Enter your name first.', true); return; }
   const ids = $('ids').value.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean);
   if (!ids.length){ setFeedback('Enter at least one BDC ID.', true); return; }
 
   const btn = $('start');
   btn.disabled = true; btn.textContent = 'Queuing…'; setFeedback('', false);
   try {
-    const res = await API.hygEnqueue({ worker, bdcIds: ids });
+    const res = await API.hygEnqueue({ bdcIds: ids });
     const parts = [`Queued ${res.created.length} propert${res.created.length===1?'y':'ies'}.`];
     if (res.notFound && res.notFound.length) parts.push(`Not in sheet: ${res.notFound.join(', ')}.`);
     setFeedback(parts.join(' '), res.created.length === 0);
@@ -150,20 +132,16 @@ function setFeedback(msg, isErr){
   el.style.color = isErr ? 'var(--red)' : 'var(--green)';
 }
 
-function renderWorker(w){
+function renderWorkers(data){
   const el = $('worker-banner');
-  if (!w || !w.id){
-    el.className = 'banner err';
-    el.innerHTML = '<span style="font-size:16px">🔴</span><span>Enter your name below — it must match the <code>WORKER_NAME</code> in your local worker.</span>';
-    return;
-  }
-  if (w.connected){
+  const n = data.workersOnline || 0;
+  if (n > 0){
     el.className = 'banner ok';
-    const chrome = w.chromeOk === false ? ' — but Chrome isn’t logged in (log into Booking.com in the worker window).' : ' and ready.';
-    el.innerHTML = '<span style="font-size:16px">🟢</span><span>Worker <b>'+esc(w.id)+'</b> is connected'+chrome+'</span>';
+    const chrome = data.anyChromeOk === false ? ' — but none is logged into Booking.com yet (log in inside a worker’s Chrome window).' : ' and ready.';
+    el.innerHTML = '<span style="font-size:16px">🟢</span><span><b>'+n+' worker'+(n===1?'':'s')+' online</b>'+chrome+' Jobs you queue will be picked up automatically.</span>';
   } else {
     el.className = 'banner err';
-    el.innerHTML = '<span style="font-size:16px">🔴</span><span><b>Worker not connected.</b> On your PC run <code>launch-chrome.bat</code> (log into Booking.com), then <code>start-worker.bat</code>. Jobs wait here until it connects.</span>';
+    el.innerHTML = '<span style="font-size:16px">🔴</span><span><b>No workers online.</b> On a team PC run <code>launch-chrome.bat</code> (log into Booking.com), then <code>start-worker.bat</code>. Queued jobs wait here until a worker connects.</span>';
   }
 }
 
@@ -194,13 +172,11 @@ function renderJobs(jobs){
 
 let polling = false;
 async function poll(){
-  const worker = workerInput.value.trim();
-  if (!worker){ renderWorker(null); return; }
   if (polling) return;
   polling = true;
   try {
-    const data = await API.hygJobs(worker);
-    renderWorker(data.worker);
+    const data = await API.hygJobs();
+    renderWorkers(data);
     renderChips(data.counts || {});
     renderJobs(data.jobs || []);
     const active = (data.counts.pending||0)+(data.counts.claimed||0)+(data.counts.running||0);

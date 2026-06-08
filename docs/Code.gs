@@ -201,7 +201,7 @@ function route(action, p, refresh) {
     case 'details':     return cachedSheetByName('details', CRS_SHEET_ID, DETAIL_TAB, refresh);
 
     // Hygiene scrape — live job list for the page (never cached)
-    case 'hyg_jobs':    return hygJobs(p.worker || '');
+    case 'hyg_jobs':    return hygJobs();
 
     default:
       throw new Error('Unknown action: ' + action);
@@ -343,8 +343,9 @@ function hygPropIndex_() {
 }
 
 function hygEnqueue(body) {
-  const worker = String((body && body.worker) || '').trim();
-  if (!worker) throw new Error('Your name is required');
+  // Shared pool: all team members use one BDC account, so any worker can run
+  // any job. No per-person name needed — jobs go into one common queue.
+  const submittedBy = String((body && body.submittedBy) || '').trim();
   const ids = (body && body.bdcIds) || [];
   if (!ids.length) throw new Error('No BDC IDs provided');
 
@@ -363,7 +364,7 @@ function hygEnqueue(body) {
     const startRow = ws.getLastRow() + 1;
     const rows = toAppend.map((t, i) => {
       const jobId = startRow + i;
-      return [jobId, t.id, t.name, t.row, worker, 'pending', '', '', ts, ''];
+      return [jobId, t.id, t.name, t.row, submittedBy, 'pending', '', '', ts, ''];
     });
     ws.getRange(startRow, 1, rows.length, HYG_JOB_HEADERS.length).setValues(rows);
     rows.forEach(r => created.push({ id: r[0], bdc_id: r[1], prop_name: r[2], sheet_row: r[3] }));
@@ -393,9 +394,10 @@ function hygClaim(body) {
     if (last < 2) return { job: null };
     const data = ws.getRange(2, 1, last - 1, HYG_JOB_HEADERS.length).getValues();
     for (let i = 0; i < data.length; i++) {
-      if (String(data[i][5]) === 'pending' && String(data[i][4]) === worker) {
+      if (String(data[i][5]) === 'pending') {     // shared pool: take any pending job
         const row = i + 2;
         ws.getRange(row, 6).setValue('claimed');
+        ws.getRange(row, 7).setValue('claimed by ' + worker);
         ws.getRange(row, 9).setValue(hygTs_());
         return { job: { id: data[i][0], bdc_id: String(data[i][1]), prop_name: data[i][2], sheet_row: data[i][3] } };
       }
@@ -474,31 +476,37 @@ function hygHeartbeat(body) {
   return { ok: true };
 }
 
-function hygJobs(worker) {
-  worker = String(worker || '').trim();
+function hygJobs() {
   const ws = hygJobsSheet_();
   const last = ws.getLastRow();
   let jobs = [];
   if (last >= 2) {
     ws.getRange(2, 1, last - 1, HYG_JOB_HEADERS.length).getValues().forEach(r => {
-      if (worker && String(r[4]) !== worker) return;
       jobs.push({ id: r[0], bdc_id: String(r[1]), prop_name: r[2], status: String(r[5]),
                   log: r[6], error: r[7], updated_at: r[8] ? String(r[8]) : '' });
     });
     jobs = jobs.slice(-300).reverse();
   }
-  let connected = false, chromeOk = null, note = '';
-  if (worker) {
-    try {
-      const cur = JSON.parse(PropertiesService.getScriptProperties().getProperty('hw_' + worker) || '{}');
-      if (cur.lastSeen) connected = ((new Date()).getTime() - cur.lastSeen) < 30000;
-      chromeOk = cur.chromeOk != null ? cur.chromeOk : null;
-      note = cur.note || '';
-    } catch (e) {}
-  }
+  // Count workers seen in the last 30s, and whether any has its Chrome logged in.
+  let workersOnline = 0, anyChromeOk = false, lastNote = '';
+  try {
+    const props = PropertiesService.getScriptProperties().getProperties();
+    const nowMs = (new Date()).getTime();
+    Object.keys(props).forEach(k => {
+      if (k.indexOf('hw_') !== 0) return;
+      try {
+        const c = JSON.parse(props[k]);
+        if (c.lastSeen && (nowMs - c.lastSeen) < 30000) {
+          workersOnline++;
+          if (c.chromeOk) anyChromeOk = true;
+          if (c.note) lastNote = c.note;
+        }
+      } catch (e) {}
+    });
+  } catch (e) {}
   const counts = {};
   jobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
-  return { jobs: jobs, counts: counts, worker: { id: worker, connected: connected, chromeOk: chromeOk, note: note } };
+  return { jobs: jobs, counts: counts, workersOnline: workersOnline, anyChromeOk: anyChromeOk, note: lastNote };
 }
 
 // ── Manual smoke test (run from the GAS editor) ────────────────────────────

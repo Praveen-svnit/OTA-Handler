@@ -24,17 +24,17 @@ Everything lives in **ota-handler**: the page is part of the OTA Tracker static
 site, the backend is its Google Apps Script (`Code.gs`), and results land in the
 **BDC Hygiene** sheet. No separate server or database.
 
-Jobs are routed by name: the page sends jobs to the worker whose `WORKER_NAME`
-matches the name you type on the page.
+Shared pool: the whole team uses one Booking.com account, so any online worker
+picks up the next queued job automatically — there are no per-person names. The
+**same `.env` works on every PC.**
 
 ## One-time setup
 
 1. **Install Python 3.11+** (tick "Add Python to PATH" during install).
 2. Get this folder onto your PC (zip or `git clone`).
-3. Copy `.env.example` to `.env` and fill it in:
+3. Copy `.env.example` to `.env` and fill in just two values (same for everyone):
    - `GAS_URL` = the Apps Script web-app URL (ends in `/exec`; ask your admin).
    - `WORKER_TOKEN` = the shared token (ask your admin).
-   - `WORKER_NAME` = the **exact** name you'll type on the Hygiene Scrape page.
 4. Double-click **`start-worker.bat`** once — the first run creates a virtual
    environment, installs dependencies, and downloads the browser engine. (Later
    runs start instantly.)
@@ -45,15 +45,16 @@ matches the name you type on the page.
    Log into Booking.com if it asks. **Leave this window open.**
 2. Double-click **`start-worker.bat`**. It attaches to that Chrome and waits for
    jobs. You should see `Attached to your trusted Chrome. Watching for jobs…`.
-3. Open the OTA Tracker site → **Hygiene Scrape**, type your name, paste BDC IDs, click **Start Scrape**,
-   and watch the rows turn **Done**. The Sheet updates as each finishes.
+3. Open the OTA Tracker site → **Hygiene Scrape**, paste BDC IDs, click **Start Scrape**,
+   and watch the rows turn **Done**. The Sheet updates as each finishes. Anyone's
+   worker that's online may run them — the work spreads across whoever's running.
 
 To stop, close the worker window (Ctrl+C). You can leave it running all day.
 
 ## Troubleshooting
 
-- **"Worker not connected" on the page** → start `start-worker.bat` (and make
-  sure `WORKER_NAME` matches the name you typed on the page exactly).
+- **"No workers online" on the page** → start `start-worker.bat` on at least one
+  PC (with `launch-chrome.bat` running and logged in).
 - **"Could not attach to Chrome on port 9222"** → run `launch-chrome.bat` first
   and keep that window open. Don't use your normal Chrome — it must be the one
   launched with the debug port.
