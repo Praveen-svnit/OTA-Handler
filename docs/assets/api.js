@@ -85,6 +85,9 @@ const API = (() => {
     log:         (opts)    => call('log', {}, opts),
     details:     (opts)    => call('details', {}, opts),
     saveMappingRun: (body) => callPost('save_mapping_run', body),
+    // Hygiene scrape queue (page side)
+    hygJobs:        (worker) => call('hyg_jobs', { worker }, { refresh: true }),
+    hygEnqueue:     (body)   => callPost('hyg_enqueue', body),
     clearMem,
     getUrl: () => GAS_URL,
   };

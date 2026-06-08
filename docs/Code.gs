@@ -38,6 +38,19 @@ const DETAIL_TAB      = 'Last Run Details';
 
 const CACHE_TTL_S     = 3600;   // 1 hour
 
+// ── BDC Hygiene scrape queue ───────────────────────────────────────────────
+// The "BDC Hygiene" sheet holds the property list + result columns E–T (the
+// same sheet hygiene_scraper.py wrote to). We add two helper tabs in it:
+//   'Hygiene Jobs'    — the on-demand job queue (one row per queued property)
+//   (worker presence is kept in Script Properties, not a tab)
+// Set WORKER_TOKEN in Project Settings → Script properties; the local workers
+// send it on every mutating call.
+const HYG_SHEET_ID    = '1VkFA4keBAT3tG5NkZwmSNRbLZJgx2neOhZ7Zuj2z_98';
+const HYG_TAB         = 'BDC Hygiene';
+const HYG_JOBS_TAB    = 'Hygiene Jobs';
+const HYG_JOB_HEADERS = ['ID', 'BDC ID', 'Prop Name', 'Sheet Row', 'Submitted By',
+                         'Status', 'Log', 'Error', 'Updated At', 'Result JSON'];
+
 // ── Entry point ────────────────────────────────────────────────────────────
 function doGet(e) {
   const p = (e && e.parameter) || {};
@@ -60,6 +73,12 @@ function doPost(e) {
     if (action === 'save_mapping_run') {
       return jsonResponse({ ok: true, data: saveMappingRun(body) });
     }
+    // ── Hygiene scrape queue ──────────────────────────────────────────────
+    if (action === 'hyg_enqueue')   return jsonResponse({ ok: true, data: hygEnqueue(body) });
+    if (action === 'hyg_claim')     return jsonResponse({ ok: true, data: hygClaim(body) });
+    if (action === 'hyg_progress')  return jsonResponse({ ok: true, data: hygProgress(body) });
+    if (action === 'hyg_result')    return jsonResponse({ ok: true, data: hygResult(body) });
+    if (action === 'hyg_heartbeat') return jsonResponse({ ok: true, data: hygHeartbeat(body) });
     return jsonResponse({ ok: false, error: 'Unknown POST action: ' + action });
   } catch (err) {
     return jsonResponse({ ok: false, error: String(err && err.message || err) });
@@ -181,6 +200,9 @@ function route(action, p, refresh) {
     case 'log':         return cachedSheetByName('log', CRS_SHEET_ID, LOG_TAB, refresh);
     case 'details':     return cachedSheetByName('details', CRS_SHEET_ID, DETAIL_TAB, refresh);
 
+    // Hygiene scrape — live job list for the page (never cached)
+    case 'hyg_jobs':    return hygJobs(p.worker || '');
+
     default:
       throw new Error('Unknown action: ' + action);
   }
@@ -278,6 +300,205 @@ function jsonResponse(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Hygiene scrape queue ───────────────────────────────────────────────────
+function hygCheckToken_(body) {
+  const expected = PropertiesService.getScriptProperties().getProperty('WORKER_TOKEN') || '';
+  if (!expected || (body && body.token) !== expected) {
+    throw new Error('Bad worker token');
+  }
+}
+
+function hygTs_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'yyyy-MM-dd HH:mm:ss');
+}
+
+function hygJobsSheet_() {
+  const ss = SpreadsheetApp.openById(HYG_SHEET_ID);
+  let ws = ss.getSheetByName(HYG_JOBS_TAB);
+  if (!ws) { ws = ss.insertSheet(HYG_JOBS_TAB); ws.appendRow(HYG_JOB_HEADERS); }
+  else if (ws.getLastRow() === 0) { ws.appendRow(HYG_JOB_HEADERS); }
+  return ws;
+}
+
+// BDC ID -> { row, propName } from the BDC Hygiene tab (row = 1-based sheet row).
+function hygPropIndex_() {
+  const ws = SpreadsheetApp.openById(HYG_SHEET_ID).getSheetByName(HYG_TAB);
+  if (!ws) throw new Error('Tab "' + HYG_TAB + '" not found');
+  const values = ws.getDataRange().getValues();
+  const headers = values[0].map(h => String(h == null ? '' : h).toLowerCase());
+  let bdcCol = -1, nameCol = -1;
+  for (let i = 0; i < headers.length; i++) {
+    if (bdcCol < 0 && /bdc\s*id/.test(headers[i])) bdcCol = i;
+    if (nameCol < 0 && /(prop|hotel).*name/.test(headers[i])) nameCol = i;
+  }
+  if (bdcCol < 0) throw new Error('No "BDC ID" column found in ' + HYG_TAB);
+  const map = {};
+  for (let r = 1; r < values.length; r++) {
+    const id = String(values[r][bdcCol] == null ? '' : values[r][bdcCol]).trim().replace(/\.0+$/, '');
+    if (id && !map[id]) map[id] = { row: r + 1, propName: nameCol >= 0 ? String(values[r][nameCol] || '') : '' };
+  }
+  return map;
+}
+
+function hygEnqueue(body) {
+  const worker = String((body && body.worker) || '').trim();
+  if (!worker) throw new Error('Your name is required');
+  const ids = (body && body.bdcIds) || [];
+  if (!ids.length) throw new Error('No BDC IDs provided');
+
+  const index = hygPropIndex_();
+  const ws = hygJobsSheet_();
+  const ts = hygTs_();
+  const created = [], notFound = [], toAppend = [];
+  ids.forEach(raw => {
+    const id = String(raw).trim().replace(/\.0+$/, '');
+    if (!id) return;
+    const hit = index[id];
+    if (!hit) { notFound.push(id); return; }
+    toAppend.push({ id: id, row: hit.row, name: hit.propName });
+  });
+  if (toAppend.length) {
+    const startRow = ws.getLastRow() + 1;
+    const rows = toAppend.map((t, i) => {
+      const jobId = startRow + i;
+      return [jobId, t.id, t.name, t.row, worker, 'pending', '', '', ts, ''];
+    });
+    ws.getRange(startRow, 1, rows.length, HYG_JOB_HEADERS.length).setValues(rows);
+    rows.forEach(r => created.push({ id: r[0], bdc_id: r[1], prop_name: r[2], sheet_row: r[3] }));
+  }
+  return { created: created, notFound: notFound };
+}
+
+function hygFindJobRow_(ws, id) {
+  const row = Number(id);
+  if (row >= 2 && row <= ws.getLastRow() && String(ws.getRange(row, 1).getValue()) === String(id)) return row;
+  const ids = ws.getRange(2, 1, Math.max(0, ws.getLastRow() - 1), 1).getValues();
+  for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(id)) return i + 2;
+  return -1;
+}
+
+function hygClaim(body) {
+  hygCheckToken_(body);
+  const worker = String((body && body.worker) || '').trim();
+  if (!worker) throw new Error('worker required');
+  hygTouchWorker_(worker, body && body.chromeOk, '');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ws = hygJobsSheet_();
+    const last = ws.getLastRow();
+    if (last < 2) return { job: null };
+    const data = ws.getRange(2, 1, last - 1, HYG_JOB_HEADERS.length).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][5]) === 'pending' && String(data[i][4]) === worker) {
+        const row = i + 2;
+        ws.getRange(row, 6).setValue('claimed');
+        ws.getRange(row, 9).setValue(hygTs_());
+        return { job: { id: data[i][0], bdc_id: String(data[i][1]), prop_name: data[i][2], sheet_row: data[i][3] } };
+      }
+    }
+    return { job: null };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function hygProgress(body) {
+  hygCheckToken_(body);
+  const ws = hygJobsSheet_();
+  const row = hygFindJobRow_(ws, body && body.id);
+  if (row < 0) throw new Error('job not found');
+  if (body.status) ws.getRange(row, 6).setValue(String(body.status));
+  if (body.log != null) ws.getRange(row, 7).setValue(String(body.log).slice(0, 500));
+  ws.getRange(row, 9).setValue(hygTs_());
+  return { ok: true };
+}
+
+function hygResult(body) {
+  hygCheckToken_(body);
+  const ws = hygJobsSheet_();
+  const row = hygFindJobRow_(ws, body && body.id);
+  if (row < 0) throw new Error('job not found');
+  const sheetRow = Number(ws.getRange(row, 4).getValue());
+  const ts = hygTs_();
+
+  if (body.error || (body.scrapStatus && body.scrapStatus !== 'Successful')) {
+    const status = body.scrapStatus || 'Error';
+    hygWriteRow_(sheetRow, [status, '', '', '', '', '', '', '', '', '', '', '', '', '', '', ts]);
+    ws.getRange(row, 6).setValue('error');
+    ws.getRange(row, 8).setValue(String(body.error || status).slice(0, 1000));
+    ws.getRange(row, 9).setValue(ts);
+    return { status: 'error' };
+  }
+
+  const m = body.result || {};
+  hygWriteRow_(sheetRow, [
+    'Successful',
+    m.review_score || '', m.review_count || '', m.genius_eligibility || '', m.genius_status || '',
+    m.genius_level || '', m.preferred_status || '', m.preferred_eligibility || '', m.perf_score || '',
+    m.top_promotion || '', m.commission_pct || '', m.search_result_views || '', m.views || '',
+    m.conversion_pct || '', m.page_score || '', ts,
+  ]);
+  ws.getRange(row, 6).setValue('done');
+  ws.getRange(row, 8).setValue('');
+  ws.getRange(row, 9).setValue(ts);
+  ws.getRange(row, 10).setValue(JSON.stringify(m).slice(0, 4000));
+  return { status: 'done' };
+}
+
+// Write columns E..T (16 cells) of one row in the BDC Hygiene tab.
+function hygWriteRow_(sheetRow, vals16) {
+  const ws = SpreadsheetApp.openById(HYG_SHEET_ID).getSheetByName(HYG_TAB);
+  ws.getRange(sheetRow, 5, 1, 16).setValues([vals16]);
+}
+
+function hygTouchWorker_(worker, chromeOk, note) {
+  const props = PropertiesService.getScriptProperties();
+  const key = 'hw_' + worker;
+  let cur = {};
+  try { cur = JSON.parse(props.getProperty(key) || '{}'); } catch (e) {}
+  cur.lastSeen = (new Date()).getTime();
+  if (chromeOk != null) cur.chromeOk = !!chromeOk;
+  if (note != null) cur.note = note;
+  props.setProperty(key, JSON.stringify(cur));
+}
+
+function hygHeartbeat(body) {
+  hygCheckToken_(body);
+  const worker = String((body && body.worker) || '').trim();
+  if (!worker) throw new Error('worker required');
+  hygTouchWorker_(worker, body && body.chromeOk, (body && body.note) || '');
+  return { ok: true };
+}
+
+function hygJobs(worker) {
+  worker = String(worker || '').trim();
+  const ws = hygJobsSheet_();
+  const last = ws.getLastRow();
+  let jobs = [];
+  if (last >= 2) {
+    ws.getRange(2, 1, last - 1, HYG_JOB_HEADERS.length).getValues().forEach(r => {
+      if (worker && String(r[4]) !== worker) return;
+      jobs.push({ id: r[0], bdc_id: String(r[1]), prop_name: r[2], status: String(r[5]),
+                  log: r[6], error: r[7], updated_at: r[8] ? String(r[8]) : '' });
+    });
+    jobs = jobs.slice(-300).reverse();
+  }
+  let connected = false, chromeOk = null, note = '';
+  if (worker) {
+    try {
+      const cur = JSON.parse(PropertiesService.getScriptProperties().getProperty('hw_' + worker) || '{}');
+      if (cur.lastSeen) connected = ((new Date()).getTime() - cur.lastSeen) < 30000;
+      chromeOk = cur.chromeOk != null ? cur.chromeOk : null;
+      note = cur.note || '';
+    } catch (e) {}
+  }
+  const counts = {};
+  jobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
+  return { jobs: jobs, counts: counts, worker: { id: worker, connected: connected, chromeOk: chromeOk, note: note } };
 }
 
 // ── Manual smoke test (run from the GAS editor) ────────────────────────────
