@@ -104,8 +104,10 @@
         if (!payload) {
           UI.updateLoader('Loading ' + liveTab + '\u2026');
           payload = await cfg.fetchTab(liveTab);
-          state.payload = payload;
         }
+        // Always persist payload \u2014 was missing for the "Live" exact-match branch,
+        // which made Summary tab show "No data loaded" on Booking.com.
+        state.payload = payload;
       }
       UI.updateLoader('Processing ' + cfg.title + ' data\u2026');
     } catch (e) {
