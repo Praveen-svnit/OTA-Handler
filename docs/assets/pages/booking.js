@@ -16,7 +16,7 @@
       fetchMain: () => API.bcom(),
       fetchMainFresh: () => API.bcom({ refresh: true }),
       fetchTabs: () => API.bcomTabs(),
-      fetchTab:  (name) => API.bcomTab(name),
+      fetchTab:  (name, opts) => API.bcomTab(name, opts),
       statusLetter: 'E',       // BDC Live
       statusLabel: 'BDC Live',
       subStatusLetter: 'F',
@@ -32,7 +32,7 @@
       fetchMain: () => API.gommt(),
       fetchMainFresh: () => API.gommt({ refresh: true }),
       fetchTabs: () => API.gommtTabs(),
-      fetchTab:  (name) => API.gommtTab(name),
+      fetchTab:  (name, opts) => API.gommtTab(name, opts),
       statusLetter: 'O',
       statusLabel: 'MMT',
       subStatusLetter: 'P',
@@ -48,7 +48,7 @@
       fetchMain: () => API.gmb(),
       fetchMainFresh: () => API.gmb({ refresh: true }),
       fetchTabs: () => API.gmbTabs(),
-      fetchTab:  (name) => API.gmbTab(name),
+      fetchTab:  (name, opts) => API.gmbTab(name, opts),
       statusLetter: 'E',
       statusLabel: 'Status',
       subStatusLetter: 'F',
@@ -72,7 +72,7 @@
   function strip(v) { return String(v == null ? '' : v).trim(); }
 
   // ── Render a channel page ────────────────────────────────────────────────
-  async function render(target, cfgKey) {
+  async function render(target, cfgKey, forceFresh) {
     const cfg = CFG[cfgKey];
     const state = STATE[cfgKey];
 
@@ -83,11 +83,15 @@
       title: cfg.title,
       subtitle: cfg.subtitle,
       onRefresh: async () => {
-        UI.toast('Refreshing\u2026');
+        UI.toast('Refreshing from Google Sheet\u2026');
         try {
+          // Real refresh: drop ALL in-memory state for this channel AND tell
+          // both the browser API cache and the GAS CacheService to re-fetch.
           state.payload = null;
           state.liveTab = null;
-          render(target, cfgKey);
+          // Drop browser memory cache so the same URL re-fetches
+          if (API.clearMem) API.clearMem();
+          render(target, cfgKey, /* forceFresh */ true);
           UI.toast('Refreshed');
         } catch (e) {
           UI.toast('Refresh failed: ' + e.message, true);
@@ -96,6 +100,10 @@
     }));
 
     // Fetch Live tab data (used by all sub-tabs)
+    // When forceFresh is true, pass {refresh: true} through so the API client
+    // skips its in-memory cache AND appends ?refresh=1 to the GAS URL \u2014 which
+    // makes Code.gs's withCache() skip the CacheService hit too.
+    const fetchOpts = forceFresh ? { refresh: true } : undefined;
     let payload;
     try {
       payload = state.payload;
@@ -108,7 +116,7 @@
           } else {
             // Try exact "Live" first (avoids stale tabs cache)
             try {
-              payload = await cfg.fetchTab('Live');
+              payload = await cfg.fetchTab('Live', fetchOpts);
               liveTab = 'Live';
             } catch (_) {
               const tabs = await cfg.fetchTabs();
@@ -119,7 +127,7 @@
         }
         if (!payload) {
           UI.updateLoader('Loading ' + liveTab + '\u2026');
-          payload = await cfg.fetchTab(liveTab);
+          payload = await cfg.fetchTab(liveTab, fetchOpts);
         }
         // Always persist payload \u2014 was missing for the "Live" exact-match branch,
         // which made Summary tab show "No data loaded" on Booking.com.
