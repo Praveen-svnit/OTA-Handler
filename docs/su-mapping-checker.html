@@ -143,9 +143,44 @@ td.mono { font-family: monospace; font-size: 11px; color: #555; }
 
 
 @media(max-width:680px) { .upload-grid { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } .gs-row { flex-direction: column; } }
+/* ── Initial hydration loader (hides the page until we know which state to show) ── */
+#hydrateLoader {
+  position: fixed; inset: 0;
+  background: #ffffff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 9999;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  transition: opacity 0.2s;
+}
+#hydrateLoader.hide { opacity: 0; pointer-events: none; }
+#hydrateLoader .spinner {
+  width: 36px; height: 36px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #1a56db;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  margin-bottom: 14px;
+}
+#hydrateLoader .msg {
+  color: #374151; font-size: 13px; font-weight: 500; margin-bottom: 4px;
+}
+#hydrateLoader .sub {
+  color: #9ca3af; font-size: 11px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Hide the main app until hydrate completes; avoids step-1 flicker */
+body.hydrating header,
+body.hydrating .main { visibility: hidden; }
 </style>
 </head>
-<body>
+<body class="hydrating">
+
+<div id="hydrateLoader">
+  <div class="spinner"></div>
+  <div class="msg">Loading latest results…</div>
+  <div class="sub">Fetching the team's last saved Mapping Checker run</div>
+</div>
 
 <header>
   <div>
@@ -1291,9 +1326,21 @@ function showStep1Hint(text, kind) {
 }
 
 // On load: try to hydrate from saved run. If nothing exists, show a clear
-// info banner on step 1 explaining what to do.
+// info banner on step 1 explaining what to do. While hydration is running,
+// keep the page hidden behind a centred loader so the user never sees a
+// brief flash of step 1.
+function dismissHydrateLoader() {
+  document.body.classList.remove('hydrating');
+  const ld = document.getElementById('hydrateLoader');
+  if (ld) {
+    ld.classList.add('hide');
+    setTimeout(() => { if (ld && ld.parentNode) ld.parentNode.removeChild(ld); }, 250);
+  }
+}
+
 window.addEventListener('load', async () => {
-  const ok = await hydrateFromSavedRun();
+  let ok = false;
+  try { ok = await hydrateFromSavedRun(); } catch (_) {}
   if (!ok) {
     showStep1Hint(
       'No saved run found yet. Upload an SU export, fetch CRS, click ' +
@@ -1302,7 +1349,12 @@ window.addEventListener('load', async () => {
       'info'
     );
   }
+  dismissHydrateLoader();
 });
+
+// Hard safety net: if hydrate takes > 15s for any reason, reveal the page
+// anyway so the user isn't stuck staring at a spinner.
+setTimeout(dismissHydrateLoader, 15000);
 </script>
 </body>
 </html>
