@@ -7,6 +7,7 @@
   // Pages register globally via window.PAGE_*
   Router.register(window.PAGE_BOOKING);
   Router.register(window.PAGE_GOMMT);
+  Router.register(window.PAGE_GMB);
   Router.register(window.PAGE_LISTING);
   Router.register(window.PAGE_MAPPING);
   Router.register(window.PAGE_LAST_CHECKED);
@@ -32,6 +33,7 @@
     await Promise.allSettled([
       bcomLive.value ? API.bcomTab(bcomLive.value) : Promise.resolve(),
       gommtLive.value ? API.gommtTab(gommtLive.value) : Promise.resolve(),
+      API.gmbTab('New Tracker'),
       API.listing(),
       API.log(),
       API.crs(),

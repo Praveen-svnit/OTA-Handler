@@ -42,6 +42,22 @@
       defaultTrackerTab: 'Main',
       hygExclude: ['FH Live Prop', 'MMT Shell Status', 'GO-MMT Sub Status', 'Set'],
     },
+    gmb: {
+      title: 'GMB',
+      subtitle: 'Property status, substatus and hygiene checks',
+      fetchMain: () => API.gmb(),
+      fetchMainFresh: () => API.gmb({ refresh: true }),
+      fetchTabs: () => API.gmbTabs(),
+      fetchTab:  (name) => API.gmbTab(name),
+      statusLetter: 'E',
+      statusLabel: 'Status',
+      subStatusLetter: 'F',
+      fhStatusLetter: 'I',
+      matrixLetters: ['E', 'F', 'L', 'M'],
+      defaultLiveTab: 'New Tracker',
+      defaultTrackerTab: null,
+      hygExclude: [],
+    },
   };
 
   // ── Per-channel session state (filters, drill-down etc.) ─────────────────
@@ -651,6 +667,11 @@
     id: 'gommt',
     label: 'GoMMT',
     render: (target) => render(target, 'gommt'),
+  };
+  window.PAGE_GMB = {
+    id: 'gmb',
+    label: 'GMB',
+    render: (target) => render(target, 'gmb'),
   };
 
 })();
