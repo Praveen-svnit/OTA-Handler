@@ -429,21 +429,36 @@ function hygResult(body) {
 
   if (body.error || (body.scrapStatus && body.scrapStatus !== 'Successful')) {
     const status = body.scrapStatus || 'Error';
-    hygWriteRow_(sheetRow, [status, '', '', '', '', '', '', '', '', '', '', '', '', '', '', ts]);
+    // Only stamp status (E) + timestamp (T); don't blank existing metric values.
+    const sheet = SpreadsheetApp.openById(HYG_SHEET_ID).getSheetByName(HYG_TAB);
+    sheet.getRange('E' + sheetRow).setValue(status);
+    sheet.getRange('T' + sheetRow).setValue(ts);
     ws.getRange(row, 6).setValue('error');
     ws.getRange(row, 8).setValue(String(body.error || status).slice(0, 1000));
     ws.getRange(row, 9).setValue(ts);
     return { status: 'error' };
   }
 
+  // Partial update: write ONLY the metric fields the worker actually sent, so
+  // each phase fills its own columns without blanking the others. Always stamp
+  // Scrap Status (E) + Last Checked (T).
   const m = body.result || {};
-  hygWriteRow_(sheetRow, [
-    'Successful',
-    m.review_score || '', m.review_count || '', m.genius_eligibility || '', m.genius_status || '',
-    m.genius_level || '', m.preferred_status || '', m.preferred_eligibility || '', m.perf_score || '',
-    m.top_promotion || '', m.commission_pct || '', m.search_result_views || '', m.views || '',
-    m.conversion_pct || '', m.page_score || '', ts,
-  ]);
+  const sheet = SpreadsheetApp.openById(HYG_SHEET_ID).getSheetByName(HYG_TAB);
+  // field key -> column letter in the BDC Hygiene tab
+  const COLS = {
+    review_score: 'F', review_count: 'G', genius_eligibility: 'H', genius_status: 'I',
+    genius_level: 'J', preferred_status: 'K', preferred_eligibility: 'L', perf_score: 'M',
+    top_promotion: 'N', commission_pct: 'O', search_result_views: 'P', views: 'Q',
+    conversion_pct: 'R', page_score: 'S',
+  };
+  sheet.getRange('E' + sheetRow).setValue('Successful');
+  Object.keys(COLS).forEach(function (k) {
+    if (m[k] !== undefined && m[k] !== null && m[k] !== '') {
+      sheet.getRange(COLS[k] + sheetRow).setValue(m[k]);
+    }
+  });
+  sheet.getRange('T' + sheetRow).setValue(ts);
+
   ws.getRange(row, 6).setValue('done');
   ws.getRange(row, 8).setValue('');
   ws.getRange(row, 9).setValue(ts);

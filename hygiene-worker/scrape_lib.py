@@ -25,6 +25,42 @@ def is_login_page(url: str) -> bool:
     return any(x in url for x in ["signin", "login", "auth", "account.booking.com"])
 
 
+class SessionExpired(Exception):
+    """Raised when a direct request comes back as a sign-in / 2FA page,
+    meaning the Booking session needs re-verifying in the browser."""
+
+
+def find_ses(ctx) -> str:
+    """Read the session token (ses) from any open, authenticated admin tab.
+    Direct requests need it; reading it avoids any fresh navigation (which can
+    trigger Booking's 2FA)."""
+    for pg in ctx.pages:
+        m = re.search(r'[?&]ses=([a-f0-9]{16,})', pg.url)
+        if m:
+            return m.group(1)
+    return ""
+
+
+async def fetch_reviews_fast(ctx, ses: str, hotel_id: str):
+    """Phase 1 — Review Score + Count via a single direct HTTP GET of the Guest
+    Reviews page (no browser navigation; BDC id == hotel_id so it's always the
+    right property). Returns (score, count) as strings, '' if not found."""
+    if not ses or not hotel_id:
+        return "", ""
+    url = ("https://admin.booking.com/hotel/hoteladmin/extranet_ng/manage/reviews.html"
+           f"?hotel_id={hotel_id}&lang=xu&ses={ses}")
+    r = await ctx.request.get(url, timeout=20000)
+    html = await r.text()
+    low = html.lower()
+    ms = re.search(r'bui-review-score__badge">\s*([\d.]+)\s*<', html)
+    mc = re.search(r'based on\s*([\d,]+)\s*reviews', html, re.IGNORECASE)
+    if not ms and not mc and ("sign-in" in low or "verification" in low or "account.booking.com" in low):
+        raise SessionExpired("Guest Reviews returned a sign-in/verification page")
+    score = ms.group(1) if ms else ""
+    count = mc.group(1).replace(",", "") if mc else ""
+    return score, count
+
+
 def get_property_page_score(text: str) -> str:
     m = re.search(r'Property page score[^%]{0,300}?(\d+)\s*%', text, re.IGNORECASE | re.DOTALL)
     if m:

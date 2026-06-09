@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
 import scrape_lib
-from scrape_lib import navigate_to_hotel, get_hygiene_data, is_login_page
+from scrape_lib import find_ses, fetch_reviews_fast, SessionExpired
 
 # Force UTF-8 so emoji logs don't crash on Windows consoles.
 try:
@@ -107,25 +107,10 @@ async def progress(job_id, status: str, log: str = ""):
         pass
 
 
-async def get_search_page(context):
-    """Reuse a single tab on the BDC group-home for property searches."""
-    page = None
-    for p in context.pages:
-        if "admin.booking.com" in p.url and "hotel_id=" not in p.url:
-            page = p
-            break
-    if page is None:
-        page = await context.new_page()
-    try:
-        if "groups/home" not in page.url:
-            await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=20000)
-            await asyncio.sleep(0.5)
-    except Exception:
-        pass
-    return page
-
-
 async def process_job(context, job: dict):
+    """Endpoint-only: no browser navigation (so no 2FA, no wrong-property bug).
+    Each phase fetches its fields via direct requests and reports them; the
+    sheet does a partial update (only the columns we send)."""
     job_id = job["id"]
     bdc_id = str(job["bdc_id"]).strip()
     name = job.get("prop_name") or bdc_id
@@ -133,32 +118,29 @@ async def process_job(context, job: dict):
     await progress(job_id, "running", f"Starting {name} ({bdc_id})")
     banner(f"▶ Job {job_id}: {name} ({bdc_id})")
 
-    search_page = await get_search_page(context)
-
-    if is_login_page(search_page.url):
-        await progress(job_id, "pending", "Requeued — Booking.com login required")
-        banner("  🔐 Login required — requeued; log in and it resumes")
+    ses = find_ses(context)
+    if not ses:
+        await progress(job_id, "pending", "Requeued — no Booking session (log in)")
+        banner("  🔐 No session token found — requeued; log into Booking.com")
         return False
 
-    active_page, is_new_tab = await navigate_to_hotel(search_page, context, bdc_id)
-    if active_page is None:
-        banner(f"  ⏭ {name} — not found in BDC search")
-        await report_status(job_id, "Not Found", "Property not found in BDC search")
-        return True
-
     try:
-        if is_login_page(active_page.url):
-            await progress(job_id, "pending", "Requeued — Booking.com login required")
-            return False
-        try:
-            result = await asyncio.wait_for(get_hygiene_data(active_page), timeout=JOB_TIMEOUT)
-        except asyncio.TimeoutError:
-            banner(f"  ⏱ {name} — {JOB_TIMEOUT}s timeout")
-            await report_status(job_id, "Timeout", f"{JOB_TIMEOUT}s timeout")
-            return True
+        result = {}
+        # ── Phase 1: Review Score + Count ──────────────────────────────────
+        rev_score, rev_count = await fetch_reviews_fast(context, ses, bdc_id)
+        result["review_score"] = rev_score
+        result["review_count"] = rev_count
+        banner(f"  ⭐ reviews: score={rev_score} count={rev_count}")
+
         await report_result(job_id, result)
         banner(f"  ✅ {name} done")
         return True
+    except SessionExpired:
+        await progress(job_id, "pending", "Requeued — Booking login/verification required")
+        banner("  🔐 Session needs re-verify in Chrome — requeued; pausing 20s")
+        await heartbeat(False, "Booking session needs re-verifying (open admin & complete 2FA)")
+        await asyncio.sleep(20)   # back off so we don't hammer a bad session
+        return False
     except Exception as e:
         banner(f"  ❌ {name} error: {e}")
         try:
@@ -166,12 +148,6 @@ async def process_job(context, job: dict):
         except Exception:
             pass
         return True
-    finally:
-        if is_new_tab and active_page is not None:
-            try:
-                await active_page.close()
-            except Exception:
-                pass
 
 
 async def run():
@@ -200,11 +176,11 @@ async def run():
 
             idle_logged = False
             while True:
-                # Presence + login check
-                search_page = await get_search_page(context)
-                if is_login_page(search_page.url):
-                    await heartbeat(False, "Please log into Booking.com in the worker's Chrome")
-                    banner("🔐 Waiting for Booking.com login in the Chrome window…")
+                # Presence check: need a logged-in admin tab carrying a session
+                # token. (We never navigate, to avoid tripping Booking's 2FA.)
+                if not find_ses(context):
+                    await heartbeat(False, "Open/refresh a Booking.com admin tab so the worker has a session")
+                    banner("🔐 No Booking session tab found — log into Booking.com in the Chrome window…")
                     await asyncio.sleep(POLL_INTERVAL)
                     continue
 
