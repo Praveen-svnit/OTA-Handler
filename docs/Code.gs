@@ -202,6 +202,8 @@ function route(action, p, refresh) {
 
     // Hygiene scrape — live job list for the page (never cached)
     case 'hyg_jobs':    return hygJobs();
+    // Version probe — confirm which Code.gs is actually deployed.
+    case 'hyg_version': return { version: 'p1-partial-2026-06-09b' };
 
     default:
       throw new Error('Unknown action: ' + action);
