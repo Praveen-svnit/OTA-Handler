@@ -10,7 +10,7 @@ same sheet, so the whole team's results land in one place.
 
 ## ⬇️ Download
 
-**[Download the Hygiene App (zip)](https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/praveen-svnit/ota-handler/tree/main/hygiene-app)**
+**[Download the Hygiene App (zip)](https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/Praveen-svnit/OTA-Handler/tree/main/hygiene-app)**
 
 That link downloads just this folder as a zip. Unzip it somewhere you'll remember
 (e.g. your Desktop).
