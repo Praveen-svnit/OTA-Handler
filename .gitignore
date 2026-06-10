@@ -2,3 +2,17 @@
 __pycache__/
 *.pyc
 .env
+
+# ── Hygiene app secrets — NEVER commit these ──────────────────────────────────
+service_account.json
+**/service_account.json
+*.key
+*credentials*.json
+
+# ── Hygiene app local caches / markers ────────────────────────────────────────
+.deps-installed
+**/.deps-installed
+bdc-profile/
+genius_cap.json
+_disc*.py
+.venv/
