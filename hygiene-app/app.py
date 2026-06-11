@@ -89,6 +89,13 @@ def api_setup_key():
 
 @app.route("/api/open-chrome", methods=["POST"])
 def api_open_chrome():
+    # If the debug Chrome is already up, don't stack another instance — that's
+    # what leaves several Chromes fighting over the port and breaks detection.
+    try:
+        scrape_core._cdp_get("/json/version")
+        return jsonify({"ok": True, "already": True})
+    except Exception:
+        pass
     chrome = find_chrome()
     if not chrome:
         return jsonify({"ok": False, "error": "chrome.exe not found"}), 400

@@ -164,18 +164,29 @@ async def get_ses(ctx) -> str:
     return ""
 
 
+def _cdp_get(path):
+    """Lightweight GET against Chrome's DevTools HTTP endpoint (no Playwright)."""
+    import urllib.request
+    with urllib.request.urlopen(f"http://localhost:{CDP_PORT}{path}", timeout=4) as r:
+        return r.read().decode("utf-8", "replace")
+
+
 async def session_status():
-    """Quick check used by the control panel: is Chrome reachable + logged in?"""
+    """Quick check used by the control panel: is Chrome reachable + logged in?
+
+    Uses Chrome's DevTools HTTP endpoints (cheap, robust) instead of spinning up
+    a full Playwright connection on every 2s poll — that was flaky when several
+    Chrome instances are open, and would wrongly flip to 'Chrome not open'.
+    """
+    # One call: /json lists open tabs. If it fails, Chrome's debug port is down.
     try:
-        async with async_playwright() as p:
-            try:
-                _, ctx = await attach(p)
-            except Exception:
-                return {"chrome": False, "logged_in": False}
-            ses = find_ses(ctx) or _LAST_SES["ses"]
-            return {"chrome": True, "logged_in": bool(ses)}
+        body = _cdp_get("/json")
     except Exception:
         return {"chrome": False, "logged_in": False}
+    m = re.search(r'[?&]ses=([a-f0-9]{16,})', body)
+    if m:
+        _LAST_SES["ses"] = m.group(1)
+    return {"chrome": True, "logged_in": bool(m or _LAST_SES["ses"])}
 
 
 # ── Generic runner ────────────────────────────────────────────────────────────
