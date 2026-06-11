@@ -27,10 +27,24 @@
            style="font-size:14px;padding:10px 18px">⬇️ Download the Hygiene App (zip)</a>
         <a href="${REPO_FOLDER}" target="_blank" rel="noopener" style="font-size:12.5px">View on GitHub ↗</a>
       </div>
-      <div style="font-size:12.5px;color:#64748b;margin-bottom:18px">
+      <div style="font-size:12.5px;color:#64748b;margin-bottom:16px">
         The download is <b>code only</b> — it does <b>not</b> include the Google key
         (<code>service_account.json</code>). Ask the admin (Praveen / Sujeet) for that file;
         you add it once in the app's UI. That's why the code can be public while the key stays private.
+      </div>
+
+      <div style="border-top:1px solid #eef2f6;padding-top:14px;margin-bottom:18px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px">Run it from here</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <a class="btn" href="bdchygiene://launch" style="background:#0f172a;color:#fff">▶ Launch Scraper</a>
+          <a class="btn" href="bdchygiene://quit" style="background:#b91c1c;color:#fff">■ Stop Scraper</a>
+        </div>
+        <div style="font-size:12px;color:#64748b;margin-top:8px">
+          One-time: after unzipping, double-click <code>register-launcher.bat</code> in the folder to
+          enable these buttons. Then <b>Launch</b> starts the app (your browser will ask
+          "Open BDC Hygiene?" — allow it) and <b>Stop</b> shuts it down. The app's own
+          control panel also has a <b>Quit app</b> button.
+        </div>
       </div>
 
       <div style="font-weight:700;font-size:13px;margin-bottom:8px">First-time setup</div>

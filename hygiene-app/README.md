@@ -40,6 +40,13 @@ That link downloads just this folder as a zip. Unzip it somewhere you'll remembe
 > Nothing here is public — the control panel only runs at `localhost` on your machine.
 > Your Booking login lives in your own Chrome and is never shared.
 
+### Optional — launch from the website
+
+To make the **"Launch Scraper" / "Stop Scraper"** buttons on the OTA-Handler
+*Scraper Set up* page work, double-click **`register-launcher.bat`** once. After that,
+those buttons start/stop this app from the browser (your browser asks
+"Open BDC Hygiene?" — allow it). Otherwise just use the Desktop shortcut.
+
 ---
 
 ## Daily use
