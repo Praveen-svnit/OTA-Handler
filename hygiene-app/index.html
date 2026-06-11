@@ -47,6 +47,19 @@ h1{font-size:22px;font-weight:700;margin-bottom:2px}
   <h1>🧼 BDC Hygiene</h1>
   <div class="sub">Fetch Booking.com hygiene data straight into the BDC Hygiene sheet — fast, from your own logged-in Chrome.</div>
 
+  <div class="card" id="setup-card" style="display:none;border-color:#fde68a;background:#fffbeb">
+    <div style="font-weight:700;font-size:14px;margin-bottom:4px">One-time setup — add your Google key</div>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">
+      To write into the BDC Hygiene sheet, the app needs the <b>service_account.json</b> key
+      (ask the admin for it). Locate it once below — it's saved locally and never leaves your PC.
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <input type="file" id="key-file" accept=".json,application/json" style="font-size:12px">
+      <button class="btn" id="key-save">Save key</button>
+      <span id="key-msg" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+  </div>
+
   <div class="card">
     <div class="sess">
       <span class="dot" id="sess-dot" style="background:#cbd5e1"></span>
@@ -78,6 +91,7 @@ let SCRAPERS = [];
 let CATEGORIES = [];
 let loggedIn = false;
 let running = false;
+let keyConfigured = true;
 
 const $ = id => document.getElementById(id);
 
@@ -123,11 +137,11 @@ function render(){
 function updateRunButtons(){
   document.querySelectorAll('.run').forEach(b => {
     const s = SCRAPERS.find(x => x.id === b.dataset.id);
-    b.disabled = (s.status !== 'live') || running || !loggedIn;
+    b.disabled = (s.status !== 'live') || running || !loggedIn || !keyConfigured;
   });
   document.querySelectorAll('.cat-run').forEach(b => {
     const n = SCRAPERS.filter(x => x.cat === b.dataset.cat && x.status === 'live').length;
-    b.disabled = !n || running || !loggedIn;
+    b.disabled = !n || running || !loggedIn || !keyConfigured;
   });
 }
 
@@ -151,6 +165,8 @@ async function poll(){
   try{
     const st = await (await fetch('/api/status')).json();
     loggedIn = st.logged_in;
+    keyConfigured = st.key_configured !== false;
+    $('setup-card').style.display = keyConfigured ? 'none' : 'block';
     const dot = $('sess-dot'), txt = $('sess-text');
     if(!st.chrome){ dot.style.background='#cbd5e1'; txt.textContent='Chrome not open — click “Open Booking & log in”.'; }
     else if(!st.logged_in){ dot.style.background='var(--amber)'; txt.textContent='Chrome open — log into Booking.com in that window.'; }
@@ -187,6 +203,20 @@ $('stop-btn').addEventListener('click', async () => {
 $('open-chrome').addEventListener('click', async () => {
   await fetch('/api/open-chrome', {method:'POST'});
   setMsg('Opening Chrome… log into Booking.com in the new window.');
+});
+
+$('key-save').addEventListener('click', async () => {
+  const f = $('key-file').files[0];
+  const km = $('key-msg');
+  if(!f){ km.textContent='Pick your service_account.json first.'; km.style.color='var(--red)'; return; }
+  km.textContent='Saving…'; km.style.color='var(--muted)';
+  try{
+    const text = await f.text();
+    const res = await (await fetch('/api/setup-key', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({content:text})})).json();
+    if(res.ok){ km.textContent='✓ Saved — '+(res.email||'key configured'); km.style.color='var(--green)'; }
+    else { km.textContent = res.error || 'Failed to save.'; km.style.color='var(--red)'; }
+  }catch(e){ km.textContent='Save failed.'; km.style.color='var(--red)'; }
 });
 
 loadScrapers();

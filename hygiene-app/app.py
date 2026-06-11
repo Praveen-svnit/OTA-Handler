@@ -7,6 +7,7 @@ Chrome. Nothing here is public.
 """
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -57,7 +58,33 @@ def api_scrapers():
 @app.route("/api/status")
 def api_status():
     sess = asyncio.run(scrape_core.session_status())
-    return jsonify({"chrome": sess["chrome"], "logged_in": sess["logged_in"], "run": PROGRESS})
+    return jsonify({"chrome": sess["chrome"], "logged_in": sess["logged_in"],
+                    "key_configured": os.path.exists(scrape_core.SERVICE_ACCOUNT_FILE),
+                    "run": PROGRESS})
+
+
+@app.route("/api/setup-key", methods=["POST"])
+def api_setup_key():
+    """One-time setup: save the user's service_account.json (uploaded from the UI).
+
+    Validates it's a real service-account key before writing it next to app.py.
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    content = body.get("content", "")
+    try:
+        data = json.loads(content)
+    except Exception:
+        return jsonify({"ok": False, "error": "That file isn't valid JSON. Pick the service_account.json key file."}), 400
+    missing = [k for k in ("type", "client_email", "private_key") if not data.get(k)]
+    if data.get("type") != "service_account" or missing:
+        return jsonify({"ok": False, "error": "That doesn't look like a service-account key (missing "
+                        + ", ".join(missing or ["type"]) + ")."}), 400
+    try:
+        with open(scrape_core.SERVICE_ACCOUNT_FILE, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not save the key: {e}"}), 500
+    return jsonify({"ok": True, "email": data.get("client_email", "")})
 
 
 @app.route("/api/open-chrome", methods=["POST"])
@@ -153,8 +180,36 @@ def api_stop():
     return jsonify({"ok": True})
 
 
+def _ensure_desktop_shortcut():
+    """Drop a one-click 'BDC Hygiene' shortcut on the Desktop (Windows only, once).
+
+    Points at the launcher so future launches are a single click — no hunting for
+    the .bat. Best-effort: any failure is ignored."""
+    if os.name != "nt":
+        return
+    try:
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        lnk = os.path.join(desktop, "BDC Hygiene.lnk")
+        bat = os.path.join(HERE, "Start Hygiene App.bat")
+        if os.path.exists(lnk) or not os.path.isdir(desktop) or not os.path.exists(bat):
+            return
+        ps = (
+            "$w=New-Object -ComObject WScript.Shell;"
+            f"$s=$w.CreateShortcut('{lnk}');"
+            f"$s.TargetPath='{bat}';"
+            f"$s.WorkingDirectory='{HERE}';"
+            f"$s.IconLocation='{find_chrome() or bat}';"
+            "$s.Description='Launch the BDC Hygiene control panel';"
+            "$s.Save()"
+        )
+        subprocess.Popen(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps])
+    except Exception:
+        pass
+
+
 def main():
     url = f"http://localhost:{PORT}"
+    _ensure_desktop_shortcut()
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     print(f"\n  BDC Hygiene control panel → {url}\n  (close this window to stop)\n")
     app.run(host="127.0.0.1", port=PORT, threaded=True)

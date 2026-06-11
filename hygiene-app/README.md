@@ -25,14 +25,17 @@ That link downloads just this folder as a zip. Unzip it somewhere you'll remembe
 ## First-time setup
 
 1. Install **Python** (Anaconda is fine) and **Google Chrome** if you don't have them.
-2. **Get `service_account.json` from the admin** and place it in this folder, next
-   to `app.py`. This is the key that lets the app write to the sheet.
-   - Whichever service account is used (OTA-handler or Sujeet's), it must have
-     **Editor** access to the BDC Hygiene sheet.
-3. Double-click **`Start Hygiene App.bat`**. The first run installs dependencies
+2. Double-click **`Start Hygiene App.bat`**. The first run installs dependencies
    (~1–2 min, includes the Chrome automation engine); after that it starts fast and
    opens the control panel in your browser (`http://localhost:8765`).
-   - *(Tip: right-click the .bat → Send to → Desktop, for a one-click icon.)*
+   - It also drops a **"BDC Hygiene" shortcut on your Desktop**, so from then on
+     it's a single click — no hunting for the .bat.
+3. **Add your Google key (one-time).** Get `service_account.json` from the admin,
+   then in the control panel use the **"One-time setup — add your Google key"** box
+   to locate it. It's saved locally and never leaves your PC.
+   - (Or just drop `service_account.json` into this folder manually — same effect.)
+   - Whichever service account is used (OTA-handler or Sujeet's), it must have
+     **Editor** access to the BDC Hygiene sheet.
 
 > Nothing here is public — the control panel only runs at `localhost` on your machine.
 > Your Booking login lives in your own Chrome and is never shared.
