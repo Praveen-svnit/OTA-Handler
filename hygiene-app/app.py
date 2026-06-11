@@ -180,6 +180,20 @@ def api_stop():
     return jsonify({"ok": True})
 
 
+@app.route("/api/quit", methods=["POST"])
+def api_quit():
+    """Kill switch — shut the whole app/server down (closes the launcher)."""
+    PROGRESS["stop"] = True
+
+    def _bye():
+        import time as _t
+        _t.sleep(0.4)
+        os._exit(0)
+
+    threading.Thread(target=_bye, daemon=True).start()
+    return jsonify({"ok": True})
+
+
 def _ensure_desktop_shortcut():
     """Drop a one-click 'BDC Hygiene' shortcut on the Desktop (Windows only, once).
 

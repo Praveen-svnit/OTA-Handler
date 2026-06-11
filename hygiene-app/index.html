@@ -66,6 +66,7 @@ h1{font-size:22px;font-weight:700;margin-bottom:2px}
       <span id="sess-text" style="font-size:13px">Checking session…</span>
       <span style="flex:1"></span>
       <button class="btn ghost" id="open-chrome">Open Booking &amp; log in</button>
+      <button class="btn" id="quit-btn" style="background:var(--red)" title="Shut the app down">Quit app</button>
     </div>
   </div>
 
@@ -203,6 +204,14 @@ $('stop-btn').addEventListener('click', async () => {
 $('open-chrome').addEventListener('click', async () => {
   await fetch('/api/open-chrome', {method:'POST'});
   setMsg('Opening Chrome… log into Booking.com in the new window.');
+});
+
+$('quit-btn').addEventListener('click', async () => {
+  if(!confirm('Shut the Hygiene App down? Any running scrape will stop.')) return;
+  try { await fetch('/api/quit', {method:'POST'}); } catch(e){}
+  document.body.innerHTML = '<div style="font-family:sans-serif;padding:40px;color:#334155">'
+    + '<h2>App stopped.</h2><p>You can close this tab. Re-launch from your Desktop shortcut '
+    + 'or <b>Start Hygiene App.bat</b> when you need it again.</p></div>';
 });
 
 $('key-save').addEventListener('click', async () => {

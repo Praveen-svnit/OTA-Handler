@@ -14,8 +14,8 @@
   function render(target) {
     target.innerHTML = '';
     target.appendChild(UI.pageHeader({
-      title: 'Hygiene App',
-      subtitle: 'Download the local Booking.com hygiene scraper — runs on your PC, writes to the shared BDC Hygiene sheet',
+      title: 'Scraper Set up',
+      subtitle: 'Download & set up the local Booking.com hygiene scraper — runs on your PC, writes to the shared BDC Hygiene sheet',
     }));
 
     const card = UI.el('div', {
@@ -57,7 +57,7 @@
 
   window.PAGE_HYGIENE = {
     id: 'hygiene',
-    label: 'Hygiene App',
+    label: 'Scraper Set up',
     render: render,
   };
 
