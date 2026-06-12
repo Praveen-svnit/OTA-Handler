@@ -8,9 +8,9 @@
   Router.register(window.PAGE_BOOKING);
   Router.register(window.PAGE_GOMMT);
   Router.register(window.PAGE_GMB);
-  Router.register(window.PAGE_LISTING);
-  Router.register(window.PAGE_MAPPING);
   (window.OTA_PAGES || []).forEach(p => Router.register(p));
+  // OTA Tools group (rendered under a section header in the sidebar)
+  Router.register(window.PAGE_MAPPING);
   Router.register(window.PAGE_SCRAPER);
   // Last Checked retired — its functionality is now baked into Mapping Checker
   // (latest run is auto-loaded on open + auto-saved on Run Analysis).
@@ -37,7 +37,6 @@
       bcomLive.value ? API.bcomTab(bcomLive.value) : Promise.resolve(),
       gommtLive.value ? API.gommtTab(gommtLive.value) : Promise.resolve(),
       API.gmbTab('New Tracker'),
-      API.listing(),
       API.log(),
       API.crs(),
       API.dashboard(),

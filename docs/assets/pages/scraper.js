@@ -335,6 +335,6 @@
     else lockedView(target);
   }
 
-  window.PAGE_SCRAPER = { id: 'scraper', label: 'Scraper', render: render };
+  window.PAGE_SCRAPER = { id: 'scraper', label: 'Scraper', group: 'OTA Tools', render: render };
 
 })();

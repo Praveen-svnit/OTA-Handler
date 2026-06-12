@@ -48,6 +48,7 @@
   window.PAGE_MAPPING = {
     id: 'mapping',
     label: 'Mapping Checker',
+    group: 'OTA Tools',
     render: render,
   };
 

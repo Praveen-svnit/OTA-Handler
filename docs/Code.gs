@@ -41,6 +41,10 @@ const OTA_SHEETS = {
   indigo: { id: '1u_RyuxHS86JvlKhCDWLn0QZZdGDqZHvJSkXskxh90pM', tab: 'Live ' },
   easemytrip: { id: '19oB4tKRaRHFps_O3VEPWnVoissGpE27NuXmsB8puZT4', tab: 'Live Properties' },
   yatra: { id: '1veWgbJHRoHHZyowHYESt3VCehIKwMUAZ0bW92SgrOHU', tab: 'Yatra Live' },
+  photoshoot: { id: '1OlT0XA3Nk_RFpgbehysSCGcd955-Dyg7biWu9sbbPpQ', tab: 'OTA Photoshoot Tracker' },
+  dss_dod: { id: '1xI0TjmZkmKwD27nNIhah7iaQtbpAmX5tfJYckbw2Jio', tab: 'DoD Summary' },
+  dss_wow: { id: '1xI0TjmZkmKwD27nNIhah7iaQtbpAmX5tfJYckbw2Jio', tab: 'WoW Summary' },
+  dss_mom: { id: '1xI0TjmZkmKwD27nNIhah7iaQtbpAmX5tfJYckbw2Jio', tab: 'MoM Summary' },
 };
 
 const CRS_TAB         = 'CRS DATA';

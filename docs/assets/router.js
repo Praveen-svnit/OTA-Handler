@@ -13,7 +13,19 @@ const Router = (() => {
   function buildNav() {
     const nav = document.getElementById('nav');
     nav.innerHTML = '';
+    let lastGroup = null;
     pages.forEach(p => {
+      if (p.group && p.group !== lastGroup) {
+        const h = document.createElement('div');
+        h.className = 'nav-group';
+        h.textContent = p.group;
+        h.style.cssText = 'font-size:10px;font-weight:600;text-transform:uppercase;'
+                        + 'letter-spacing:.08em;color:#a1a1aa;margin:18px 12px 4px';
+        nav.appendChild(h);
+        lastGroup = p.group;
+      } else if (!p.group) {
+        lastGroup = null;
+      }
       const a = document.createElement('a');
       a.href = '#/' + p.id;
       a.textContent = p.label;
