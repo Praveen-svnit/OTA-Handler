@@ -12,6 +12,12 @@
   // id = route hash + sidebar order; key = OTA_SHEETS key in Code.gs.
   const OTAS = [
     { id: 'agoda', label: 'Agoda', key: 'agoda' },
+    { id: 'ixigo', label: 'Ixigo', key: 'ixigo' },
+    { id: 'expedia', label: 'Expedia', key: 'expedia' },
+    { id: 'cleartrip', label: 'Cleartrip', key: 'cleartrip' },
+    { id: 'indigo', label: 'Indigo', key: 'indigo' },
+    { id: 'easemytrip', label: 'EaseMyTrip', key: 'easemytrip' },
+    { id: 'yatra', label: 'Yatra', key: 'yatra' },
   ];
 
   function makePage(cfg) {

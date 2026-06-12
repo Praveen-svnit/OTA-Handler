@@ -35,6 +35,12 @@ const LISTING_GID     = 158406294;
 // each pointing at a sheet + the tab to show. Add a line here per OTA.
 const OTA_SHEETS = {
   agoda: { id: '1oArMEiRCnga_tO8VBMdz9gynhwkaVuPdfz8yzEE8Kag', tab: 'Live Properties' },
+  ixigo: { id: '1sTqQpcGb-lxbO-iRwfjDynS2nVxFlDjcRMP8FVgFXaY', tab: 'Ixigo Live' },
+  expedia: { id: '1HR24f-LIoVXjhoqDiTiecZ-6yCaM3kWSrNsiqLhm9DU', tab: 'Live Properties' },
+  cleartrip: { id: '18lqRLC9LHwRuCAAEHnG7DpfvUWR6jdF4te-xm_ZMIUE', tab: 'Live' },
+  indigo: { id: '1u_RyuxHS86JvlKhCDWLn0QZZdGDqZHvJSkXskxh90pM', tab: 'Live ' },
+  easemytrip: { id: '19oB4tKRaRHFps_O3VEPWnVoissGpE27NuXmsB8puZT4', tab: 'Live Properties' },
+  yatra: { id: '1veWgbJHRoHHZyowHYESt3VCehIKwMUAZ0bW92SgrOHU', tab: 'Yatra Live' },
 };
 
 const CRS_TAB         = 'CRS DATA';
