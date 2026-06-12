@@ -52,10 +52,10 @@
         ol.style.cssText = 'font-size:13px;color:#3f3f46;line-height:1.7;padding-left:20px;margin:0';
         [
           'Unzip the folder anywhere (e.g. your Desktop).',
+          'Make sure <b>Python</b> and <b>Chrome</b> are installed (the launcher needs Python — Anaconda or python.org).',
           'Place your <b>service_account.json</b> (the Google key — shared with you privately) inside the unzipped folder, next to <code>app.py</code>.',
-          'Make sure Chrome is installed.',
           'Double-click <b>Start Hygiene App.bat</b>. It installs requirements on first run and opens the app in your browser.',
-          'In the app, log into Booking.com, then run the scrapers.',
+          'In the app, log into Booking.com, then click Run / Run all (and Stop to halt).',
         ].forEach(t => { const li = document.createElement('li'); li.innerHTML = t; ol.appendChild(li); });
         return ol;
       })(),
