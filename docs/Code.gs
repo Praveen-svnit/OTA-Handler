@@ -31,6 +31,12 @@ const GMB_SHEET_ID    = '16awDYKs1jdR0x5VDJTo8CokB_fqqjr7JRpmRY0tv4Fk';
 const DASH_SHEET_ID   = '1ND1SBFknF1aD4iVA_1XtwXK_u7wEonFUVYesv5sZRXU';
 const LISTING_GID     = 158406294;
 
+// OTA tracker pages — server-side whitelist (pages pass a key, never a raw ID),
+// each pointing at a sheet + the tab to show. Add a line here per OTA.
+const OTA_SHEETS = {
+  agoda: { id: '1oArMEiRCnga_tO8VBMdz9gynhwkaVuPdfz8yzEE8Kag', tab: 'Live Properties' },
+};
+
 const CRS_TAB         = 'CRS DATA';
 const DASH_TAB        = 'Prop Level Dashboard';
 const LOG_TAB         = 'Last Checked';
@@ -173,6 +179,8 @@ function route(action, p, refresh) {
     case 'gmb_tabs':    return cachedTabList('gmb_tabs', GMB_SHEET_ID, refresh);
     case 'gmb_tab':     return cachedSheetNamedTab('gmb_tab', GMB_SHEET_ID, p.name, refresh);
 
+    case 'ota':         return cachedOtaTab(p.key, refresh);
+
     case 'listing':     return cachedSheetByGid('listing', DASH_SHEET_ID, LISTING_GID, refresh);
 
     case 'crs':         return cachedSheetByName('crs', CRS_SHEET_ID, CRS_TAB, refresh);
@@ -191,6 +199,17 @@ function cachedTabList(cacheKey, sheetId, refresh) {
   return withCache(cacheKey, refresh, () => {
     const ss = SpreadsheetApp.openById(sheetId);
     return { tabs: ss.getSheets().map(s => s.getName()) };
+  });
+}
+
+function cachedOtaTab(key, refresh) {
+  const cfg = OTA_SHEETS[key];
+  if (!cfg) throw new Error('Unknown OTA: ' + key);
+  return withCache('ota_' + key, refresh, () => {
+    const ss = SpreadsheetApp.openById(cfg.id);
+    const ws = ss.getSheetByName(cfg.tab);
+    if (!ws) throw new Error('Tab "' + cfg.tab + '" not found for OTA ' + key);
+    return sheetToColsRows(ws);
   });
 }
 

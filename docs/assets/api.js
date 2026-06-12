@@ -80,6 +80,7 @@ const API = (() => {
     gmbTabs:     (opts)    => call('gmb_tabs', {}, opts),
     gmbTab:      (name, o) => call('gmb_tab', { name }, o),
     listing:     (opts)    => call('listing', {}, opts),
+    ota:         (key, o)  => call('ota', { key }, o),
     crs:         (opts)    => call('crs', {}, opts),
     dashboard:   (opts)    => call('dashboard', {}, opts),
     log:         (opts)    => call('log', {}, opts),
