@@ -84,6 +84,19 @@
     });
     sessRow.appendChild(openBtn);
 
+    const quitBtn = el('button', {
+      style: 'background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:8px;'
+           + 'padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer',
+    }, '⏻ Shut down engine');
+    quitBtn.addEventListener('click', async () => {
+      if (running && !confirm('A scrape is running. Shut down anyway?')) return;
+      try { await lpost('/api/quit'); } catch (_) {}   // connection drops as it dies — expected
+      connected = false; scrapersLoaded = false;
+      UI.toast('Engine shut down — the console window will close.');
+      poll();   // immediately reflect the disconnected state
+    });
+    sessRow.appendChild(quitBtn);
+
     const limitWrap = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:#71717a' }, [
       el('span', null, 'Test limit (blank = all):'),
       el('input', { id: 'sc-limit', type: 'text', inputmode: 'numeric', placeholder: 'e.g. 50',
