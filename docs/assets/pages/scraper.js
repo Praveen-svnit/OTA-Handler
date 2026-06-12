@@ -135,8 +135,8 @@
       'Unzip the folder anywhere (e.g. your Desktop).',
       'Make sure <b>Python</b> and <b>Chrome</b> are installed (the launcher needs Python — Anaconda or python.org).',
       'Place your <b>service_account.json</b> (the Google key — shared privately) next to <code>app.py</code>.',
-      'Double-click <b>Register Launcher.bat</b> <u>once</u> — this enables the green <b>▶ Start engine</b> button on this page. (Re-run only if you move the folder.)',
-      'Now just click <b>▶ Start engine</b> above (allow the browser "Open?" prompt). The controls turn on once it connects. You can also run <b>Start Hygiene App.bat</b> directly if you prefer.',
+      'Double-click <b>Start Hygiene App.bat</b> <u>once</u> to set up. (The app self-registers so the green <b>▶ Start engine</b> button works from then on.)',
+      'After that first run, you can boot it straight from here — just click <b>▶ Start engine</b> above (allow the browser "Open?" prompt) and the controls turn on.',
     ].forEach(t => { const li = document.createElement('li'); li.innerHTML = t; ol.appendChild(li); });
     details.appendChild(ol);
     const warn = el('div', {
