@@ -225,7 +225,12 @@ function cachedSheetByNameRaw(cacheKey, sheetId, tabName, refresh) {
     const ss = SpreadsheetApp.openById(sheetId);
     const ws = ss.getSheetByName(tabName);
     if (!ws) throw new Error('Tab "' + tabName + '" not found.');
-    return { rows: ws.getDataRange().getValues() };   // raw 2-D array
+    const range = ws.getDataRange();
+    const vals = range.getValues();
+    const disp = range.getDisplayValues();
+    // Keep date cells in the sheet's display format (avoid ISO serialisation).
+    const rows = vals.map((r, i) => r.map((v, j) => (v instanceof Date) ? disp[i][j] : v));
+    return { rows: rows };   // raw 2-D array
   });
 }
 
@@ -247,8 +252,13 @@ function cachedSheetByGid(cacheKey, sheetId, gid, refresh) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function sheetToColsRows(ws) {
-  const all = ws.getDataRange().getValues();
+  const range = ws.getDataRange();
+  const all = range.getValues();
   if (!all || all.length === 0) return { cols: [], rows: [] };
+  // Display values = exactly what the sheet shows (so dates keep the sheet's
+  // own format instead of being serialised as ISO strings). We only swap them
+  // in for Date cells, leaving numbers/text as real typed values.
+  const disp = range.getDisplayValues();
   const headers = all[0].map(h => String(h == null ? '' : h));
   // Deduplicate headers
   const seen = {};
@@ -257,7 +267,10 @@ function sheetToColsRows(ws) {
     seen[h] += 1;
     return h + '.' + seen[h];
   });
-  const rows = all.slice(1).map(r => r.map(v => v == null ? '' : v));
+  const rows = all.slice(1).map((r, i) => r.map((v, j) => {
+    if (v instanceof Date) return disp[i + 1][j];   // match the sheet's date format
+    return v == null ? '' : v;
+  }));
   return { cols: cols, rows: rows };
 }
 
