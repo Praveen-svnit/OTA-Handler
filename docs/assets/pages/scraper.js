@@ -23,8 +23,9 @@
   const PW_HASH = '09e0ba824b8bdf58703de93588ccf6311dd7f08a54375d71f868a179e3f48c33';
   const ZIP_URL = 'downloads/bdc-hygiene-app.zip';
   const LOCAL   = 'http://localhost:8765';
-  const SESSION_KEY = 'scraper_unlocked';
+  const LAUNCH_URL = 'bdchygiene://start';   // custom protocol (registered once locally)
 
+  let unlocked = false;   // in-memory only — re-locks on every browser refresh
   let pollTimer = null;
   let scrapersLoaded = false;
   let SCRAPERS = [];
@@ -53,10 +54,18 @@
     // Connection banner
     const connDot  = el('span', { id: 'sc-conn-dot', style: 'width:10px;height:10px;border-radius:50%;display:inline-block;background:#cbd5e1' });
     const connText = el('span', { id: 'sc-conn-text', style: 'font-size:13px;color:#52525b' }, 'Looking for the local engine…');
+    const startBtn = el('button', {
+      id: 'sc-start', style: 'display:none;background:#16a34a;color:#fff;border:none;border-radius:8px;'
+        + 'padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer',
+    }, '▶ Start engine');
+    startBtn.addEventListener('click', () => {
+      window.location.href = LAUNCH_URL;
+      UI.toast('Launching… click "Open" if your browser asks. Give it a few seconds.');
+    });
     const banner = el('div', {
       style: 'display:flex;align-items:center;gap:10px;border:1px solid #e4e4e7;'
            + 'border-radius:10px;padding:12px 16px;background:#fff;margin-bottom:14px',
-    }, [connDot, connText]);
+    }, [connDot, connText, el('span', { style: 'flex:1' }), startBtn]);
     target.appendChild(banner);
 
     // ── Control card (shown when connected) ───────────────────────────────────
@@ -126,8 +135,8 @@
       'Unzip the folder anywhere (e.g. your Desktop).',
       'Make sure <b>Python</b> and <b>Chrome</b> are installed (the launcher needs Python — Anaconda or python.org).',
       'Place your <b>service_account.json</b> (the Google key — shared privately) next to <code>app.py</code>.',
-      'Double-click <b>Start Hygiene App.bat</b> and keep that window open.',
-      'Come back here — this page will detect it and the controls above turn on.',
+      'Double-click <b>Register Launcher.bat</b> <u>once</u> — this enables the green <b>▶ Start engine</b> button on this page. (Re-run only if you move the folder.)',
+      'Now just click <b>▶ Start engine</b> above (allow the browser "Open?" prompt). The controls turn on once it connects. You can also run <b>Start Hygiene App.bat</b> directly if you prefer.',
     ].forEach(t => { const li = document.createElement('li'); li.innerHTML = t; ol.appendChild(li); });
     details.appendChild(ol);
     const warn = el('div', {
@@ -217,17 +226,21 @@
     const control = document.getElementById('sc-control');
     if (!connDot) { stopPolling(); return; }   // navigated away — stop the timer
 
+    const startBtn = document.getElementById('sc-start');
     connected = !!st;
     if (!connected) {
       connDot.style.background = '#cbd5e1';
-      connText.innerHTML = 'Local engine not detected — open the section below, run <b>Start Hygiene App.bat</b>, then keep its window open.';
+      connText.innerHTML = 'Local engine not detected — click <b>Start engine</b> (or run <b>Start Hygiene App.bat</b> from the setup section below).';
       if (control) control.style.display = 'none';
+      if (startBtn) startBtn.style.display = 'inline-block';
+      scrapersLoaded = false;
       return;
     }
 
     connDot.style.background = '#16a34a';
     connText.innerHTML = 'Local engine connected ✓';
     if (control) control.style.display = 'block';
+    if (startBtn) startBtn.style.display = 'none';
 
     if (!scrapersLoaded) {
       try {
@@ -287,7 +300,7 @@
     const msg = UI.el('div', { style: 'font-size:12px;color:#dc2626;margin-top:10px;min-height:16px' }, '');
     async function tryUnlock() {
       if (await sha256Hex(input.value) === PW_HASH) {
-        sessionStorage.setItem(SESSION_KEY, '1');
+        unlocked = true;
         const t = document.getElementById('content'); t.innerHTML = '';
         t.appendChild(UI.pageHeader({ title: 'Scraper', subtitle: 'Run the Booking.com hygiene scraper' }));
         unlockedView(t);
@@ -305,7 +318,7 @@
     scrapersLoaded = false;
     target.innerHTML = '';
     target.appendChild(UI.pageHeader({ title: 'Scraper', subtitle: 'Run the Booking.com hygiene scraper' }));
-    if (sessionStorage.getItem(SESSION_KEY) === '1') unlockedView(target);
+    if (unlocked) unlockedView(target);
     else lockedView(target);
   }
 
