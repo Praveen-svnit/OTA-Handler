@@ -23,7 +23,7 @@
  * Cache: 1 hour via Apps Script CacheService. Add &refresh=1 to bypass.
  */
 
-// ── Sheet IDs (mirror sheets.py constants) ─────────────────────────────────
+// ── Sheet IDs ──────────────────────────────────────────────────────────────
 const CRS_SHEET_ID    = '1H2lP2zn4Ydeyex504DzmfBwXAX0Ip2H4SIu92DylRLw';
 const BCOM_SHEET_ID   = '1vjm8BX1QZKMqXiLjbokCD0R91JvlscXcg5812p_IolI';
 const GOMMT_SHEET_ID  = '1Pr2iEC7UvI7sWgwx4qQGQcO9Iw3dyzBqLpAr2mrQvKc';
@@ -250,7 +250,7 @@ function sheetToColsRows(ws) {
   const all = ws.getDataRange().getValues();
   if (!all || all.length === 0) return { cols: [], rows: [] };
   const headers = all[0].map(h => String(h == null ? '' : h));
-  // Deduplicate headers (mirrors sheets.py _rows_to_df behaviour)
+  // Deduplicate headers
   const seen = {};
   const cols = headers.map(h => {
     if (seen[h] == null) { seen[h] = 0; return h; }

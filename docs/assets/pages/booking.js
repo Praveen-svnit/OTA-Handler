@@ -3,12 +3,12 @@
  *
  * Tabs: Summary  |  Hygiene Checks  |  Value Summaries  |  E-F-L-M Matrix
  *
- * Channel config is passed in. Defaults match _BCOM_CFG in the Streamlit app.
+ * Channel config is passed in (see _BCOM_CFG / _GOMMT_CFG below).
  */
 
 (function () {
 
-  // ── Channel config (mirrors _BCOM_CFG / _GOMMT_CFG in app.py) ────────────
+  // ── Channel config (_BCOM_CFG / _GOMMT_CFG) ──────────────────────────────
   const CFG = {
     bcom: {
       title: 'Booking.com',

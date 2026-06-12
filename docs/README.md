@@ -1,8 +1,7 @@
-# OTA Tracker — v2 (Static HTML + Google Apps Script)
+# OTA Tracker (Static HTML + Google Apps Script)
 
-A rewrite of the Streamlit app as a static site with a Google Apps Script
-backend. Goals: instant page navigation, presentation-ready UI, free hosting,
-team needs zero Google Sheet permissions.
+A static site with a Google Apps Script backend. Goals: instant page navigation,
+presentation-ready UI, free hosting, team needs zero Google Sheet permissions.
 
 ## Architecture at a glance
 
@@ -23,7 +22,7 @@ team needs zero Google Sheet permissions.
 
 * **Backend** — `Code.gs` deployed as a Google Apps Script Web App. Holds the
   credentials (runs as YOU), reads the sheets, returns JSON. 1-hour cache via
-  `CacheService` mirrors the Streamlit app's `@st.cache_data(ttl=3600)`.
+  `CacheService`.
 
 ## One-time setup
 
@@ -128,5 +127,4 @@ credentials.
 
 ## Updating sheet IDs
 
-Edit the constants at the top of `Code.gs` (the Streamlit `sheets.py`
-constants are the same values today).
+Edit the constants at the top of `Code.gs`.
