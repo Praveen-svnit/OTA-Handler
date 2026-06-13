@@ -9,11 +9,23 @@
 
   let data = null;
   const ddCache = {};
-  const sel = { sets: [], cats: [] };
+  const sel = { sets: [], cats: [], months: [] };
   function barColor(p) { return p >= 80 ? '#16a34a' : p >= 50 ? '#b45309' : '#dc2626'; }
 
-  function uniqSorted(vals) {
-    return Array.from(new Set(vals)).sort((a, b) => String(a).localeCompare(String(b)));
+  // Month sort: "Apr-26" -> sortable; "(blank)" last.
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  function monthKey(m) {
+    const mm = String(m).match(/([A-Za-z]{3})[^0-9]*(\d{2,4})/);
+    if (!mm) return 999999;
+    let y = parseInt(mm[2]); if (y < 100) y += 2000;
+    return y * 100 + (MON[mm[1].toLowerCase()] || 0);
+  }
+
+  function uniqSorted(vals, monthly) {
+    const u = Array.from(new Set(vals));
+    if (monthly) u.sort((a, b) => monthKey(a) - monthKey(b));
+    else u.sort((a, b) => String(a).localeCompare(String(b)));
+    return u;
   }
 
   async function render(target) {
@@ -35,10 +47,12 @@
     const otas = data.otas || [];
     const setOpts = uniqSorted(groups.map(g => g.s));
     const catOpts = uniqSorted(groups.map(g => g.c));
+    const monthOpts = uniqSorted(groups.map(g => g.m), true);
 
     // keep prior selection if still valid
     sel.sets = sel.sets.filter(v => setOpts.includes(v));
     sel.cats = sel.cats.filter(v => catOpts.includes(v));
+    sel.months = sel.months.filter(v => monthOpts.includes(v));
 
     // ── Filters ──────────────────────────────────────────────────────────────
     const fr = UI.el('div', { class: 'filters' });
@@ -51,6 +65,7 @@
     }
     addFilter('Prop Set', setOpts, 'sets');
     addFilter('Prop Cat', catOpts, 'cats');
+    addFilter('Live Month', monthOpts, 'months', true);
     target.appendChild(fr);
 
     const statHost = UI.el('div'); target.appendChild(statHost);
@@ -59,7 +74,8 @@
     function recompute() {
       const fg = groups.filter(g =>
         (!sel.sets.length || sel.sets.includes(g.s)) &&
-        (!sel.cats.length || sel.cats.includes(g.c)));
+        (!sel.cats.length || sel.cats.includes(g.c)) &&
+        (!sel.months.length || sel.months.includes(g.m)));
       const total = fg.reduce((s, g) => s + g.n, 0);
       const rows = otas.map((label, i) => {
         const live = fg.reduce((s, g) => s + (g.l[i] || 0), 0);
