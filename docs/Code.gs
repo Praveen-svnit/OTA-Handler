@@ -236,55 +236,75 @@ function cachedTabList(cacheKey, sheetId, refresh) {
 }
 
 // ── Listing overview ────────────────────────────────────────────────────────
-// Base = Inv rows (cols A-E) whose STATUS (col E) is not "Churned".
-function _invBase() {
-  var ws = SpreadsheetApp.openById(INV_SHEET_ID).getSheetByName(INV_TAB);
-  if (!ws) throw new Error('Inv tab not found');
-  var vals = ws.getRange(1, 1, ws.getLastRow(), 5).getValues();
-  var base = {};
-  for (var i = 1; i < vals.length; i++) {
-    var id = String(vals[i][0]).trim();
-    var st = String(vals[i][4]).trim();
-    if (id && st.toLowerCase() !== 'churned') base[id] = true;
-  }
-  return base;
-}
-
+// Returns per (Prop Set × Prop Cat × Live Month) groups with per-OTA live counts,
+// so the page can filter on those dimensions and aggregate instantly.
+//   Base attributes (Set/Cat) come from Inv; Live Month from Booking's
+//   "FH Live Month"; each OTA's live status from its own sheet (authoritative).
 function listingOverview(refresh) {
   return withCache('listing_overview', refresh, function () {
-    var base = _invBase();
-    var baseCount = Object.keys(base).length;
-    var rows = OVERVIEW_OTAS.map(function (o) {
+    // 1) base attributes from Inv (cols A=id, E=STATUS, F=Pre/Post, G=Prop Cat)
+    var iv = SpreadsheetApp.openById(INV_SHEET_ID).getSheetByName(INV_TAB);
+    var ivVals = iv.getRange(1, 1, iv.getLastRow(), 7).getValues();
+    var ivHdr = ivVals[0];
+    function ci(name) { for (var i = 0; i < ivHdr.length; i++) if (String(ivHdr[i]).trim() === name) return i; return -1; }
+    var cId = 0, cStatus = ci('STATUS'), cSet = ci('Pre/Post'), cCat = ci('Prop Cat');
+    var attr = {}, order = [];
+    for (var i = 1; i < ivVals.length; i++) {
+      var id = String(ivVals[i][cId]).trim();
+      var st = String(ivVals[i][cStatus]).trim();
+      if (!id || st.toLowerCase() === 'churned' || attr[id]) continue;
+      attr[id] = {
+        s: cSet >= 0 ? (String(ivVals[i][cSet]).trim() || '(blank)') : '(blank)',
+        c: cCat >= 0 ? (String(ivVals[i][cCat]).trim() || '(blank)') : '(blank)',
+      };
+      order.push(id);
+    }
+
+    // 2) per-OTA live sets (status column == "Live", from each channel's sheet)
+    var otaLabels = [], liveSets = [];
+    OVERVIEW_OTAS.forEach(function (o) {
       var cfg = o.sheetId ? { id: o.sheetId, tab: o.tab } : OTA_SHEETS[o.key];
       var ws = SpreadsheetApp.openById(cfg.id).getSheetByName(cfg.tab);
-      var lastRow = ws.getLastRow();
       var hdr = ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0];
-      var stIdx = -1;
-      for (var c = 0; c < hdr.length; c++) if (String(hdr[c]).trim() === o.statusHeader) { stIdx = c; break; }
-      var ids = ws.getRange(1, 1, lastRow, 1).getValues();
-      var sts = stIdx >= 0 ? ws.getRange(1, stIdx + 1, lastRow, 1).getValues() : null;
-      // first status seen per base id (avoid duplicate double-count)
-      var statusById = {};
+      var si = -1; for (var c = 0; c < hdr.length; c++) if (String(hdr[c]).trim() === o.statusHeader) { si = c; break; }
+      var ids = ws.getRange(1, 1, ws.getLastRow(), 1).getValues();
+      var sts = si >= 0 ? ws.getRange(1, si + 1, ws.getLastRow(), 1).getValues() : null;
+      var set = {};
       for (var r = 1; r < ids.length; r++) {
-        var id = String(ids[r][0]).trim();
-        if (!base[id] || statusById.hasOwnProperty(id)) continue;
-        statusById[id] = sts ? String(sts[r][0]).trim() : '';
+        var pid = String(ids[r][0]).trim();
+        if (!attr[pid] || set.hasOwnProperty(pid)) continue;
+        if (sts && String(sts[r][0]).trim().toLowerCase() === 'live') set[pid] = true;
       }
-      var live = 0, breakdown = {};
-      Object.keys(base).forEach(function (id) {
-        var st = statusById.hasOwnProperty(id) ? statusById[id] : '(not in sheet)';
-        if (st.toLowerCase() === 'live') live++;
-        else { var k = st || '(blank)'; breakdown[k] = (breakdown[k] || 0) + 1; }
-      });
-      var bd = Object.keys(breakdown).map(function (k) { return { status: k, count: breakdown[k] }; })
-                     .sort(function (a, b) { return b.count - a.count; });
-      return {
-        ota: o.label, key: o.key, live: live,
-        pct: baseCount ? Math.round(live / baseCount * 1000) / 10 : 0,
-        pending: baseCount - live, breakdown: bd,
-      };
+      otaLabels.push(o.label); liveSets.push(set);
     });
-    return { base: baseCount, rows: rows };
+
+    // 3) live month from Booking's "FH Live Month"
+    var monthMap = {};
+    try {
+      var bk = SpreadsheetApp.openById(BCOM_SHEET_ID).getSheetByName('Live');
+      var bh = bk.getRange(1, 1, 1, bk.getLastColumn()).getValues()[0];
+      var mi = -1; for (var c = 0; c < bh.length; c++) if (String(bh[c]).trim() === 'FH Live Month') { mi = c; break; }
+      if (mi >= 0) {
+        var bids = bk.getRange(1, 1, bk.getLastRow(), 1).getValues();
+        var bms = bk.getRange(1, mi + 1, bk.getLastRow(), 1).getValues();
+        for (var r2 = 1; r2 < bids.length; r2++) {
+          var p2 = String(bids[r2][0]).trim();
+          if (p2 && !monthMap[p2]) monthMap[p2] = String(bms[r2][0]).trim();
+        }
+      }
+    } catch (e) { /* month optional */ }
+
+    // 4) aggregate by (set, cat, month)
+    var groupMap = {};
+    order.forEach(function (id) {
+      var a = attr[id], m = monthMap[id] || '(blank)';
+      var key = a.s + '|' + a.c + '|' + m;
+      var g = groupMap[key];
+      if (!g) { g = groupMap[key] = { s: a.s, c: a.c, m: m, n: 0, l: otaLabels.map(function () { return 0; }) }; }
+      g.n++;
+      for (var i = 0; i < liveSets.length; i++) if (liveSets[i][id]) g.l[i]++;
+    });
+    return { otas: otaLabels, groups: Object.keys(groupMap).map(function (k) { return groupMap[k]; }) };
   });
 }
 
