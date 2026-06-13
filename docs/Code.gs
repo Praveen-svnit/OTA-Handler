@@ -47,10 +47,22 @@ const OTA_SHEETS = {
   dss_mom: { id: '1xI0TjmZkmKwD27nNIhah7iaQtbpAmX5tfJYckbw2Jio', tab: 'MoM Summary' },
 };
 
-// Listing Overview source — the team's formula-maintained "Listing Summary" tab
-// in the BDC Hygiene sheet (% per OTA + the full pending-status breakdown).
-const INV_SHEET_ID        = '1VkFA4keBAT3tG5NkZwmSNRbLZJgx2neOhZ7Zuj2z_98';
-const LISTING_SUMMARY_TAB = 'Listing Summary';
+// Listing Overview — live FH base from the BDC Hygiene "Inv" tab (cols A-E,
+// churn excluded), and each OTA's live count from its "<OTA> Status" column.
+const INV_SHEET_ID = '1VkFA4keBAT3tG5NkZwmSNRbLZJgx2neOhZ7Zuj2z_98';
+const INV_TAB      = 'Inv';
+
+// statusHeader = the column in each OTA's live tab whose value "Live" means
+// the property is live on that OTA. Anything else is a pending reason.
+const OVERVIEW_OTAS = [
+  { key: 'agoda', label: 'Agoda', statusHeader: 'Agoda Status' },
+  { key: 'expedia', label: 'Expedia', statusHeader: 'Expedia Status' },
+  { key: 'cleartrip', label: 'Cleartrip', statusHeader: 'CT Status' },
+  { key: 'yatra', label: 'Yatra', statusHeader: 'Yatra Status' },
+  { key: 'easemytrip', label: 'EaseMyTrip', statusHeader: 'EMT Status' },
+  { key: 'ixigo', label: 'Ixigo', statusHeader: 'Ixigo Status' },
+  { key: 'indigo', label: 'Indigo', statusHeader: 'Indigo Status' },
+];
 
 const CRS_TAB         = 'CRS DATA';
 const DASH_TAB        = 'Prop Level Dashboard';
@@ -220,15 +232,55 @@ function cachedTabList(cacheKey, sheetId, refresh) {
 }
 
 // ── Listing overview ────────────────────────────────────────────────────────
-// Reads the main block of the "Listing Summary" tab (rows 1-12, cols A-N):
-//   row 0 = % per OTA (col A = base count), row 1 = headers (Prop Set, OTAs…, Total),
-//   rows 2-11 = status categories (Live, Not Live, Pending, Pending at OTA…).
+// Base = Inv rows (cols A-E) whose STATUS (col E) is not "Churned".
+function _invBase() {
+  var ws = SpreadsheetApp.openById(INV_SHEET_ID).getSheetByName(INV_TAB);
+  if (!ws) throw new Error('Inv tab not found');
+  var vals = ws.getRange(1, 1, ws.getLastRow(), 5).getValues();
+  var base = {};
+  for (var i = 1; i < vals.length; i++) {
+    var id = String(vals[i][0]).trim();
+    var st = String(vals[i][4]).trim();
+    if (id && st.toLowerCase() !== 'churned') base[id] = true;
+  }
+  return base;
+}
+
 function listingOverview(refresh) {
   return withCache('listing_overview', refresh, function () {
-    var ws = SpreadsheetApp.openById(INV_SHEET_ID).getSheetByName(LISTING_SUMMARY_TAB);
-    if (!ws) throw new Error('Listing Summary tab not found');
-    var v = ws.getRange(1, 1, 12, 14).getDisplayValues();   // display values keep "97.33%"
-    return { pcts: v[0], headers: v[1], categories: v.slice(2) };
+    var base = _invBase();
+    var baseCount = Object.keys(base).length;
+    var rows = OVERVIEW_OTAS.map(function (o) {
+      var cfg = OTA_SHEETS[o.key];
+      var ws = SpreadsheetApp.openById(cfg.id).getSheetByName(cfg.tab);
+      var lastRow = ws.getLastRow();
+      var hdr = ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0];
+      var stIdx = -1;
+      for (var c = 0; c < hdr.length; c++) if (String(hdr[c]).trim() === o.statusHeader) { stIdx = c; break; }
+      var ids = ws.getRange(1, 1, lastRow, 1).getValues();
+      var sts = stIdx >= 0 ? ws.getRange(1, stIdx + 1, lastRow, 1).getValues() : null;
+      // first status seen per base id (avoid duplicate double-count)
+      var statusById = {};
+      for (var r = 1; r < ids.length; r++) {
+        var id = String(ids[r][0]).trim();
+        if (!base[id] || statusById.hasOwnProperty(id)) continue;
+        statusById[id] = sts ? String(sts[r][0]).trim() : '';
+      }
+      var live = 0, breakdown = {};
+      Object.keys(base).forEach(function (id) {
+        var st = statusById.hasOwnProperty(id) ? statusById[id] : '(not in sheet)';
+        if (st.toLowerCase() === 'live') live++;
+        else { var k = st || '(blank)'; breakdown[k] = (breakdown[k] || 0) + 1; }
+      });
+      var bd = Object.keys(breakdown).map(function (k) { return { status: k, count: breakdown[k] }; })
+                     .sort(function (a, b) { return b.count - a.count; });
+      return {
+        ota: o.label, key: o.key, live: live,
+        pct: baseCount ? Math.round(live / baseCount * 1000) / 10 : 0,
+        pending: baseCount - live, breakdown: bd,
+      };
+    });
+    return { base: baseCount, rows: rows };
   });
 }
 
