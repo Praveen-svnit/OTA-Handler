@@ -20,9 +20,11 @@ const API = (() => {
     const refresh = !!opts.refresh;
 
     const qs = new URLSearchParams({ action, ...params });
+    // Cache key is the URL WITHOUT the refresh flag, so a refreshed result is
+    // stored under the same key a normal call later reads from.
+    const cacheKey = GAS_URL + '?' + qs.toString();
     if (refresh) qs.set('refresh', '1');
     const url = GAS_URL + '?' + qs.toString();
-    const cacheKey = url.replace(/refresh=1&?/, '');   // cache key ignores refresh flag
 
     if (!refresh && memCache.has(cacheKey)) {
       return Promise.resolve(memCache.get(cacheKey));

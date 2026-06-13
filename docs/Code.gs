@@ -187,8 +187,10 @@ function saveMappingRun(body) {
     detailWs.getRange(1, 1, data.length, detailHeaders.length).setValues(data);
   }
 
-  // Invalidate the cached reads so the next GET picks up the new data
-  CacheService.getScriptCache().removeAll(['log', 'details']);
+  // Invalidate the cached reads so the next GET picks up the new data.
+  // Note: cachedSheetByName stores under "<cacheKey>_<tabName>", so the keys
+  // are NOT plain 'log'/'details' — they must include the tab name.
+  CacheService.getScriptCache().removeAll(['log_' + LOG_TAB, 'details_' + DETAIL_TAB]);
 
   return { savedAt: ts, totalRows: flat.length };
 }
