@@ -282,30 +282,14 @@ function listingOverview(refresh) {
       otaLabels.push(o.label); liveSets.push(set); excSets.push(exc);
     });
 
-    // 3) live month from Booking's "FH Live Month"
-    var monthMap = {};
-    try {
-      var bk = SpreadsheetApp.openById(BCOM_SHEET_ID).getSheetByName('Live');
-      var bh = bk.getRange(1, 1, 1, bk.getLastColumn()).getValues()[0];
-      var mi = -1; for (var c = 0; c < bh.length; c++) if (String(bh[c]).trim() === 'FH Live Month') { mi = c; break; }
-      if (mi >= 0) {
-        var bids = bk.getRange(1, 1, bk.getLastRow(), 1).getValues();
-        var bms = bk.getRange(1, mi + 1, bk.getLastRow(), 1).getValues();
-        for (var r2 = 1; r2 < bids.length; r2++) {
-          var p2 = String(bids[r2][0]).trim();
-          if (p2 && !monthMap[p2]) monthMap[p2] = String(bms[r2][0]).trim();
-        }
-      }
-    } catch (e) { /* month optional */ }
-
-    // 4) aggregate by (set, cat, month)
+    // 3) aggregate by (set, cat)
     var groupMap = {};
     order.forEach(function (id) {
-      var a = attr[id], m = monthMap[id] || '(blank)';
-      var key = a.s + '|' + a.c + '|' + m;
+      var a = attr[id];
+      var key = a.s + '|' + a.c;
       var g = groupMap[key];
       if (!g) {
-        g = groupMap[key] = { s: a.s, c: a.c, m: m, n: 0,
+        g = groupMap[key] = { s: a.s, c: a.c, n: 0,
           l: otaLabels.map(function () { return 0; }), e: otaLabels.map(function () { return 0; }) };
       }
       g.n++;
