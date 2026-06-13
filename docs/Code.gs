@@ -52,9 +52,13 @@ const OTA_SHEETS = {
 const INV_SHEET_ID = '1VkFA4keBAT3tG5NkZwmSNRbLZJgx2neOhZ7Zuj2z_98';
 const INV_TAB      = 'Inv';
 
-// statusHeader = the column in each OTA's live tab whose value "Live" means
-// the property is live on that OTA. Anything else is a pending reason.
+// statusHeader = the column in each channel's live tab whose value "Live" means
+// the property is live there. Anything else is a pending reason. OTA entries use
+// their OTA_SHEETS key; the original channels carry an explicit sheetId + tab.
 const OVERVIEW_OTAS = [
+  { label: 'Booking.com', sheetId: BCOM_SHEET_ID, tab: 'Live', statusHeader: 'Sub Status' },
+  { label: 'GoMMT', sheetId: GOMMT_SHEET_ID, tab: 'Live', statusHeader: 'Sub Status' },
+  { label: 'GMB', sheetId: GMB_SHEET_ID, tab: 'New Tracker', statusHeader: 'GMB Sub Status' },
   { key: 'agoda', label: 'Agoda', statusHeader: 'Agoda Status' },
   { key: 'expedia', label: 'Expedia', statusHeader: 'Expedia Status' },
   { key: 'cleartrip', label: 'Cleartrip', statusHeader: 'CT Status' },
@@ -251,7 +255,7 @@ function listingOverview(refresh) {
     var base = _invBase();
     var baseCount = Object.keys(base).length;
     var rows = OVERVIEW_OTAS.map(function (o) {
-      var cfg = OTA_SHEETS[o.key];
+      var cfg = o.sheetId ? { id: o.sheetId, tab: o.tab } : OTA_SHEETS[o.key];
       var ws = SpreadsheetApp.openById(cfg.id).getSheetByName(cfg.tab);
       var lastRow = ws.getLastRow();
       var hdr = ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0];
