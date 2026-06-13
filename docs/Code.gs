@@ -47,21 +47,10 @@ const OTA_SHEETS = {
   dss_mom: { id: '1xI0TjmZkmKwD27nNIhah7iaQtbpAmX5tfJYckbw2Jio', tab: 'MoM Summary' },
 };
 
-// Live FH property base for the Listing Overview (BDC Hygiene sheet → Inv tab,
-// cols A-E; STATUS in col E — anything not "Churned" is the live in-system base).
-const INV_SHEET_ID = '1VkFA4keBAT3tG5NkZwmSNRbLZJgx2neOhZ7Zuj2z_98';
-const INV_TAB      = 'Inv';
-
-// OTAs included in the overview. All use col A (index 0) as the FH property id.
-const OVERVIEW_OTAS = [
-  { key: 'agoda', label: 'Agoda' },
-  { key: 'ixigo', label: 'Ixigo' },
-  { key: 'expedia', label: 'Expedia' },
-  { key: 'cleartrip', label: 'Cleartrip' },
-  { key: 'indigo', label: 'Indigo' },
-  { key: 'easemytrip', label: 'EaseMyTrip' },
-  { key: 'yatra', label: 'Yatra' },
-];
+// Listing Overview source — the team's formula-maintained "Listing Summary" tab
+// in the BDC Hygiene sheet (% per OTA + the full pending-status breakdown).
+const INV_SHEET_ID        = '1VkFA4keBAT3tG5NkZwmSNRbLZJgx2neOhZ7Zuj2z_98';
+const LISTING_SUMMARY_TAB = 'Listing Summary';
 
 const CRS_TAB         = 'CRS DATA';
 const DASH_TAB        = 'Prop Level Dashboard';
@@ -208,7 +197,6 @@ function route(action, p, refresh) {
     case 'ota':         return cachedOtaTab(p.key, refresh);
 
     case 'listing_overview': return listingOverview(refresh);
-    case 'listing_pending':  return listingPending(p.ota, refresh);
 
     case 'listing':     return cachedSheetByGid('listing', DASH_SHEET_ID, LISTING_GID, refresh);
 
@@ -232,65 +220,15 @@ function cachedTabList(cacheKey, sheetId, refresh) {
 }
 
 // ── Listing overview ────────────────────────────────────────────────────────
-// Base = Inv rows (cols A-E) whose STATUS (col E) is not "Churned".
-function _invBase() {
-  const ws = SpreadsheetApp.openById(INV_SHEET_ID).getSheetByName(INV_TAB);
-  if (!ws) throw new Error('Inv tab not found');
-  const vals = ws.getRange(1, 1, ws.getLastRow(), 5).getValues();
-  const base = {};   // id -> { name, city, status }
-  for (var i = 1; i < vals.length; i++) {
-    var id = String(vals[i][0]).trim();
-    var status = String(vals[i][4]).trim();
-    if (!id || status.toLowerCase() === 'churned') continue;
-    base[id] = { name: vals[i][1], city: vals[i][2], status: status };
-  }
-  return base;
-}
-
-// Set of FH property ids present in an OTA's live tab (col A).
-function _otaLiveIds(key) {
-  const cfg = OTA_SHEETS[key];
-  if (!cfg) throw new Error('Unknown OTA: ' + key);
-  const ws = SpreadsheetApp.openById(cfg.id).getSheetByName(cfg.tab);
-  if (!ws) throw new Error('Tab not found for ' + key);
-  const vals = ws.getRange(1, 1, ws.getLastRow(), 1).getValues();
-  const set = {};
-  for (var i = 1; i < vals.length; i++) {
-    var id = String(vals[i][0]).trim();
-    if (id) set[id] = true;
-  }
-  return set;
-}
-
+// Reads the main block of the "Listing Summary" tab (rows 1-12, cols A-N):
+//   row 0 = % per OTA (col A = base count), row 1 = headers (Prop Set, OTAs…, Total),
+//   rows 2-11 = status categories (Live, Not Live, Pending, Pending at OTA…).
 function listingOverview(refresh) {
   return withCache('listing_overview', refresh, function () {
-    var base = _invBase();
-    var baseIds = Object.keys(base);
-    var baseCount = baseIds.length;
-    var rows = OVERVIEW_OTAS.map(function (o) {
-      var live = _otaLiveIds(o.key);
-      var listed = 0;
-      for (var i = 0; i < baseIds.length; i++) if (live[baseIds[i]]) listed++;
-      return {
-        ota: o.label, key: o.key, listed: listed,
-        pct: baseCount ? Math.round(listed / baseCount * 1000) / 10 : 0,
-        pending: baseCount - listed,
-      };
-    });
-    return { base: baseCount, rows: rows };
-  });
-}
-
-// Pending = base properties NOT present in the OTA's live tab.
-function listingPending(key, refresh) {
-  return withCache('listing_pending_' + key, refresh, function () {
-    var base = _invBase();
-    var live = _otaLiveIds(key);
-    var out = [];
-    Object.keys(base).forEach(function (id) {
-      if (!live[id]) out.push([id, base[id].name, base[id].city, base[id].status]);
-    });
-    return { cols: ['property_id', 'property_name', 'property_city', 'FH STATUS'], rows: out };
+    var ws = SpreadsheetApp.openById(INV_SHEET_ID).getSheetByName(LISTING_SUMMARY_TAB);
+    if (!ws) throw new Error('Listing Summary tab not found');
+    var v = ws.getRange(1, 1, 12, 14).getDisplayValues();   // display values keep "97.33%"
+    return { pcts: v[0], headers: v[1], categories: v.slice(2) };
   });
 }
 

@@ -1,96 +1,87 @@
 /**
- * Listing Overview — cross-OTA listing % against the live FH base.
+ * Listing Overview — surfaces the BDC Hygiene "Listing Summary" tab:
+ *   - % listed per OTA (against the live FH base) as cards
+ *   - the full status breakdown (Live / Not Live / Pending / Pending at OTA …)
  *
- * Base = BDC Hygiene "Inv" tab (cols A-E), churn excluded (computed in Code.gs).
- * For each OTA: listed = base ids present in its live tab, pending = the rest.
- * Click an OTA row to see its pending listings (with FH status).
+ * Data shape from API.listingOverview():
+ *   { pcts:    ['1610','97.33%',...,'14.09%'],     // col0 = base count
+ *     headers: ['Prop Set','Agoda',...,'Total'],
+ *     categories: [ ['Live','1567',...], ['Not Live',...], ... ] }
  */
 
 (function () {
 
-  let overview = null;
-  const pendingCache = {};
+  let data = null;
 
-  function barColor(pct) { return pct >= 80 ? '#16a34a' : pct >= 50 ? '#b45309' : '#dc2626'; }
+  function pctNum(s) { const m = String(s).match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; }
+  function barColor(p) { return p >= 80 ? '#16a34a' : p >= 50 ? '#b45309' : '#dc2626'; }
 
   async function render(target) {
     target.innerHTML = '';
     target.appendChild(UI.pageHeader({
       title: 'Listing Overview',
-      subtitle: 'OTA listing % vs the live FH base (churn excluded)',
+      subtitle: 'OTA listing % vs the live FH base (from Listing Summary)',
       onRefresh: async () => {
         UI.toast('Refreshing…');
-        try { overview = await API.listingOverview({ refresh: true }); render(target); UI.toast('Refreshed'); }
+        try { data = await API.listingOverview({ refresh: true }); render(target); UI.toast('Refreshed'); }
         catch (e) { UI.toast('Refresh failed: ' + e.message, true); }
       },
     }));
 
-    let data;
-    try { UI.updateLoader('Computing listing %…'); data = overview || (overview = await API.listingOverview()); }
+    try { UI.updateLoader('Loading listing summary…'); data = data || (data = await API.listingOverview()); }
     catch (e) { target.appendChild(UI.el('div', { class: 'splash' }, 'Could not load: ' + e.message)); return; }
 
-    target.appendChild(UI.stats([`Live FH base (churn excluded): <b>${data.base.toLocaleString()}</b> properties`]));
+    const { pcts, headers, categories } = data;
+    const base = pcts[0];
+    const catRow = (label) => categories.find(r => String(r[0]).trim().toLowerCase() === label.toLowerCase()) || [];
+    const liveRow = catRow('Live'), notLiveRow = catRow('Not Live'), pendRow = catRow('Pending');
 
-    // ── Summary table ─────────────────────────────────────────────────────────
-    const rows = data.rows.slice().sort((a, b) => b.pct - a.pct);
-    const tbl = document.createElement('table');
-    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;max-width:720px';
-    tbl.innerHTML = '<thead><tr>' +
-      ['OTA', 'Listed', 'Listing %', 'Pending'].map(h =>
-        `<th style="text-align:left;padding:8px 10px;border-bottom:2px solid #e4e4e7;color:#71717a;font-size:11px;text-transform:uppercase;letter-spacing:.04em">${h}</th>`).join('') +
-      '</tr></thead>';
-    const tbody = document.createElement('tbody');
-    rows.forEach(r => {
-      const tr = document.createElement('tr');
-      tr.style.cssText = 'cursor:pointer;border-bottom:1px solid #f1f3f5';
-      tr.onmouseenter = () => tr.style.background = '#f8fafc';
-      tr.onmouseleave = () => tr.style.background = '';
-      tr.innerHTML =
-        `<td style="padding:10px;font-weight:600">${r.ota}</td>` +
-        `<td style="padding:10px">${r.listed.toLocaleString()}</td>` +
-        `<td style="padding:10px"><div style="display:flex;align-items:center;gap:8px">` +
-          `<div style="flex:1;max-width:170px;height:8px;background:#eef2f6;border-radius:4px;overflow:hidden">` +
-          `<div style="height:100%;width:${r.pct}%;background:${barColor(r.pct)}"></div></div>` +
-          `<span style="font-weight:700;min-width:46px">${r.pct}%</span></div></td>` +
-        `<td style="padding:10px;color:#b91c1c;font-weight:600">${r.pending.toLocaleString()}</td>`;
-      tr.addEventListener('click', () => showPending(r));
-      tbody.appendChild(tr);
-    });
-    tbl.appendChild(tbody);
-    target.appendChild(tbl);
-    target.appendChild(UI.el('div', { style: 'font-size:12px;color:#a1a1aa;margin-top:8px' },
-      'Click an OTA row to see its pending listings.'));
+    target.appendChild(UI.stats([`Live FH base (Prop Set): <b>${base}</b> properties`]));
 
-    const host = UI.el('div', { style: 'margin-top:22px' });
-    target.appendChild(host);
-
-    async function showPending(r) {
-      host.innerHTML = '';
-      host.appendChild(UI.el('div', { class: 'splash' }, `Loading ${r.ota} pending…`));
-      let pd;
-      try { pd = pendingCache[r.key] || (pendingCache[r.key] = await API.listingPending(r.key)); }
-      catch (e) { host.innerHTML = ''; host.appendChild(UI.el('div', { class: 'splash' }, 'Could not load: ' + e.message)); return; }
-
-      host.innerHTML = '';
-      host.appendChild(UI.el('div', { style: 'font-weight:700;font-size:15px;margin-bottom:10px' },
-        `${r.ota} — ${r.pending.toLocaleString()} pending listings`));
-      const records = UI.toRecords(pd);
-      const tb = UI.toolbar({ placeholder: 'Search pending…', countText: records.length + ' rows',
-        onChange: (v) => redraw(v) });
-      host.appendChild(tb.el);
-      const th = UI.el('div');
-      host.appendChild(th);
-      function redraw(q) {
-        let view = records;
-        if (q) { const s = q.toLowerCase(); view = records.filter(x => Object.values(x).some(v => String(v).toLowerCase().includes(s))); }
-        tb.el.querySelector('.count').textContent = `${view.length.toLocaleString()} rows`;
-        th.innerHTML = '';
-        th.appendChild(UI.table({ columns: pd.cols.map(c => ({ key: c, label: c })), rows: view, height: 460 }));
-        th.appendChild(UI.el('button', { class: 'btn btn-sm', style: 'margin-top:8px',
-          onClick: () => UI.downloadCsv(r.key + '_pending.csv', pd.cols, view) }, 'Download CSV'));
-      }
-      redraw('');
+    // ── OTA % cards (skip the leading "Prop Set" label col and trailing "Total") ─
+    const cards = UI.el('div', { style: 'display:flex;flex-wrap:wrap;gap:12px;margin:8px 0 24px' });
+    const otaCols = [];
+    for (let j = 1; j < headers.length; j++) {
+      const name = String(headers[j]).trim();
+      if (!name || name.toLowerCase() === 'total') continue;
+      const p = pctNum(pcts[j]);
+      if (p === null) continue;                       // skip OTAs with no % (inactive)
+      otaCols.push({ j, name, p });
     }
+    otaCols.sort((a, b) => b.p - a.p).forEach(({ j, name, p }) => {
+      cards.appendChild(UI.el('div', {
+        style: 'flex:1 1 150px;min-width:150px;border:1px solid #e4e4e7;border-radius:10px;padding:14px 16px;background:#fff',
+      }, [
+        UI.el('div', { style: 'font-size:13px;font-weight:600;color:#3f3f46;margin-bottom:8px' }, name),
+        UI.el('div', { style: `font-size:24px;font-weight:700;color:${barColor(p)}` }, p + '%'),
+        UI.el('div', { style: 'height:6px;background:#eef2f6;border-radius:3px;overflow:hidden;margin:8px 0' },
+          [UI.el('div', { style: `height:100%;width:${p}%;background:${barColor(p)}` })]),
+        UI.el('div', { style: 'font-size:11px;color:#71717a' },
+          `Live ${liveRow[j] || 0} · Not Live ${notLiveRow[j] || 0} · Pending ${pendRow[j] || 0}`),
+      ]));
+    });
+    target.appendChild(cards);
+
+    // ── Full status breakdown table ─────────────────────────────────────────────
+    target.appendChild(UI.el('div', { class: 'page-sub', style: 'font-weight:600;color:#18181b;margin-bottom:8px' },
+      'Status breakdown'));
+    const tbl = document.createElement('table');
+    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px';
+    const thead = '<thead><tr>' + headers.map((h, i) =>
+      `<th style="text-align:${i === 0 ? 'left' : 'right'};padding:8px 10px;border-bottom:2px solid #e4e4e7;` +
+      `color:#71717a;font-size:11px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap">${UI.escapeHtml(h)}</th>`).join('') + '</tr></thead>';
+    // percentage row first (emphasised), then each category row
+    const pctTr = '<tr style="background:#fafafa">' + pcts.map((c, i) =>
+      `<td style="padding:8px 10px;text-align:${i === 0 ? 'left' : 'right'};font-weight:700;` +
+      `border-bottom:1px solid #e4e4e7">${i === 0 ? 'Listing %' : UI.escapeHtml(c)}</td>`).join('') + '</tr>';
+    const bodyRows = categories.map(r => '<tr>' + r.map((c, i) =>
+      `<td style="padding:8px 10px;text-align:${i === 0 ? 'left' : 'right'};border-bottom:1px solid #f1f3f5;` +
+      `${i === 0 ? 'font-weight:600' : 'color:#3f3f46'}">${UI.escapeHtml(c)}</td>`).join('') + '</tr>').join('');
+    tbl.innerHTML = thead + '<tbody>' + pctTr + bodyRows + '</tbody>';
+    target.appendChild(tbl);
+
+    target.appendChild(UI.el('button', { class: 'btn btn-sm', style: 'margin-top:14px',
+      onClick: () => UI.downloadCsv('listing_summary.csv', headers, [pcts].concat(categories)) }, 'Download CSV'));
   }
 
   window.PAGE_LISTING_OVERVIEW = { id: 'overview', label: 'Listing Overview', render: render };
