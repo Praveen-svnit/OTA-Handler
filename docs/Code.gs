@@ -262,7 +262,7 @@ function listingOverview(refresh) {
 
     // 2) per-OTA live + exception sets (from each channel's status column).
     // Live = "Live"; Exception = value containing "exception" (a not-live subset).
-    var otaLabels = [], liveSets = [], excSets = [];
+    var otaLabels = [], liveSets = [], pendSets = [], excSets = [];
     OVERVIEW_OTAS.forEach(function (o) {
       var cfg = o.sheetId ? { id: o.sheetId, tab: o.tab } : OTA_SHEETS[o.key];
       var ws = SpreadsheetApp.openById(cfg.id).getSheetByName(cfg.tab);
@@ -273,7 +273,7 @@ function listingOverview(refresh) {
       var ids = ws.getRange(1, 1, ws.getLastRow(), 1).getValues();
       var sts = si >= 0 ? ws.getRange(1, si + 1, ws.getLastRow(), 1).getValues() : null;
       var exs = ei < 0 ? null : (ei === si ? sts : ws.getRange(1, ei + 1, ws.getLastRow(), 1).getValues());
-      var set = {}, exc = {}, seen = {};
+      var set = {}, pend = {}, exc = {}, seen = {};
       for (var r = 1; r < ids.length; r++) {
         var pid = String(ids[r][0]).trim();
         if (!attr[pid] || seen[pid]) continue;
@@ -281,9 +281,12 @@ function listingOverview(refresh) {
         var sv = sts ? String(sts[r][0]).trim().toLowerCase() : '';
         var ev = exs ? String(exs[r][0]).trim().toLowerCase() : '';
         if (sv === 'live') set[pid] = true;
-        else if (ev.indexOf('exception') >= 0) exc[pid] = true;
+        else if (sv !== '') {                 // non-blank, not-live = pending (blank = not on OTA)
+          pend[pid] = true;
+          if (ev.indexOf('exception') >= 0) exc[pid] = true;
+        }
       }
-      otaLabels.push(o.label); liveSets.push(set); excSets.push(exc);
+      otaLabels.push(o.label); liveSets.push(set); pendSets.push(pend); excSets.push(exc);
     });
 
     // 3) live month from Booking's "FH Live Month"
@@ -310,11 +313,14 @@ function listingOverview(refresh) {
       var g = groupMap[key];
       if (!g) {
         g = groupMap[key] = { s: a.s, c: a.c, m: m, n: 0,
-          l: otaLabels.map(function () { return 0; }), e: otaLabels.map(function () { return 0; }) };
+          l: otaLabels.map(function () { return 0; }),
+          p: otaLabels.map(function () { return 0; }),
+          e: otaLabels.map(function () { return 0; }) };
       }
       g.n++;
       for (var i = 0; i < liveSets.length; i++) {
         if (liveSets[i][id]) g.l[i]++;
+        if (pendSets[i][id]) g.p[i]++;
         if (excSets[i][id]) g.e[i]++;
       }
     });

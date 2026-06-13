@@ -79,8 +79,9 @@
       const total = fg.reduce((s, g) => s + g.n, 0);
       const rows = otas.map((label, i) => {
         const live = fg.reduce((s, g) => s + (g.l[i] || 0), 0);
+        const pending = fg.reduce((s, g) => s + ((g.p && g.p[i]) || 0), 0);
         const exc = fg.reduce((s, g) => s + ((g.e && g.e[i]) || 0), 0);
-        return { ota: label, live, exc, pct: total ? Math.round(live / total * 1000) / 10 : 0, pending: total - live };
+        return { ota: label, live, exc, pending, pct: total ? Math.round(live / total * 1000) / 10 : 0 };
       }).sort((a, b) => b.pct - a.pct);
 
       statHost.innerHTML = '';
