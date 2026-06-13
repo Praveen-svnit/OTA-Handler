@@ -58,7 +58,7 @@ const INV_TAB      = 'Inv';
 const OVERVIEW_OTAS = [
   { label: 'Booking.com', sheetId: BCOM_SHEET_ID, tab: 'Live', statusHeader: 'Sub Status' },
   { label: 'GoMMT', sheetId: GOMMT_SHEET_ID, tab: 'Live', statusHeader: 'Sub Status' },
-  { label: 'GMB', sheetId: GMB_SHEET_ID, tab: 'New Tracker', statusHeader: 'GMB Sub Status' },
+  { label: 'GMB', sheetId: GMB_SHEET_ID, tab: 'New Tracker', statusHeader: 'GMB Sub Status', excHeader: 'GMB Sub Status' },
   { key: 'agoda', label: 'Agoda', statusHeader: 'Agoda Status' },
   { key: 'expedia', label: 'Expedia', statusHeader: 'Expedia Status' },
   { key: 'cleartrip', label: 'Cleartrip', statusHeader: 'CT Status' },
@@ -267,17 +267,21 @@ function listingOverview(refresh) {
       var cfg = o.sheetId ? { id: o.sheetId, tab: o.tab } : OTA_SHEETS[o.key];
       var ws = SpreadsheetApp.openById(cfg.id).getSheetByName(cfg.tab);
       var hdr = ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0];
-      var si = -1; for (var c = 0; c < hdr.length; c++) if (String(hdr[c]).trim() === o.statusHeader) { si = c; break; }
+      function findCol(name) { for (var c = 0; c < hdr.length; c++) if (String(hdr[c]).trim() === name) return c; return -1; }
+      var si = findCol(o.statusHeader);
+      var ei = findCol(o.excHeader || 'Sub Status');   // exceptions usually live in Sub Status
       var ids = ws.getRange(1, 1, ws.getLastRow(), 1).getValues();
       var sts = si >= 0 ? ws.getRange(1, si + 1, ws.getLastRow(), 1).getValues() : null;
+      var exs = ei < 0 ? null : (ei === si ? sts : ws.getRange(1, ei + 1, ws.getLastRow(), 1).getValues());
       var set = {}, exc = {}, seen = {};
       for (var r = 1; r < ids.length; r++) {
         var pid = String(ids[r][0]).trim();
         if (!attr[pid] || seen[pid]) continue;
         seen[pid] = true;
         var sv = sts ? String(sts[r][0]).trim().toLowerCase() : '';
+        var ev = exs ? String(exs[r][0]).trim().toLowerCase() : '';
         if (sv === 'live') set[pid] = true;
-        else if (sv.indexOf('exception') >= 0) exc[pid] = true;
+        else if (ev.indexOf('exception') >= 0) exc[pid] = true;
       }
       otaLabels.push(o.label); liveSets.push(set); excSets.push(exc);
     });
