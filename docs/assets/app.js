@@ -5,6 +5,7 @@
 
 (function () {
   // Pages register globally via window.PAGE_*
+  Router.register(window.PAGE_LISTING_OVERVIEW);
   Router.register(window.PAGE_BOOKING);
   Router.register(window.PAGE_GOMMT);
   Router.register(window.PAGE_GMB);

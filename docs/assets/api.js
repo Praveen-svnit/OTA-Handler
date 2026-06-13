@@ -81,6 +81,8 @@ const API = (() => {
     gmbTab:      (name, o) => call('gmb_tab', { name }, o),
     listing:     (opts)    => call('listing', {}, opts),
     ota:         (key, o)  => call('ota', { key }, o),
+    listingOverview: (o)   => call('listing_overview', {}, o),
+    listingPending:  (ota, o) => call('listing_pending', { ota }, o),
     crs:         (opts)    => call('crs', {}, opts),
     dashboard:   (opts)    => call('dashboard', {}, opts),
     log:         (opts)    => call('log', {}, opts),
