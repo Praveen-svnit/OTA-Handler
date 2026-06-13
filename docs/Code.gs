@@ -260,8 +260,9 @@ function listingOverview(refresh) {
       order.push(id);
     }
 
-    // 2) per-OTA live sets (status column == "Live", from each channel's sheet)
-    var otaLabels = [], liveSets = [];
+    // 2) per-OTA live + exception sets (from each channel's status column).
+    // Live = "Live"; Exception = value containing "exception" (a not-live subset).
+    var otaLabels = [], liveSets = [], excSets = [];
     OVERVIEW_OTAS.forEach(function (o) {
       var cfg = o.sheetId ? { id: o.sheetId, tab: o.tab } : OTA_SHEETS[o.key];
       var ws = SpreadsheetApp.openById(cfg.id).getSheetByName(cfg.tab);
@@ -269,13 +270,16 @@ function listingOverview(refresh) {
       var si = -1; for (var c = 0; c < hdr.length; c++) if (String(hdr[c]).trim() === o.statusHeader) { si = c; break; }
       var ids = ws.getRange(1, 1, ws.getLastRow(), 1).getValues();
       var sts = si >= 0 ? ws.getRange(1, si + 1, ws.getLastRow(), 1).getValues() : null;
-      var set = {};
+      var set = {}, exc = {}, seen = {};
       for (var r = 1; r < ids.length; r++) {
         var pid = String(ids[r][0]).trim();
-        if (!attr[pid] || set.hasOwnProperty(pid)) continue;
-        if (sts && String(sts[r][0]).trim().toLowerCase() === 'live') set[pid] = true;
+        if (!attr[pid] || seen[pid]) continue;
+        seen[pid] = true;
+        var sv = sts ? String(sts[r][0]).trim().toLowerCase() : '';
+        if (sv === 'live') set[pid] = true;
+        else if (sv.indexOf('exception') >= 0) exc[pid] = true;
       }
-      otaLabels.push(o.label); liveSets.push(set);
+      otaLabels.push(o.label); liveSets.push(set); excSets.push(exc);
     });
 
     // 3) live month from Booking's "FH Live Month"
@@ -300,9 +304,15 @@ function listingOverview(refresh) {
       var a = attr[id], m = monthMap[id] || '(blank)';
       var key = a.s + '|' + a.c + '|' + m;
       var g = groupMap[key];
-      if (!g) { g = groupMap[key] = { s: a.s, c: a.c, m: m, n: 0, l: otaLabels.map(function () { return 0; }) }; }
+      if (!g) {
+        g = groupMap[key] = { s: a.s, c: a.c, m: m, n: 0,
+          l: otaLabels.map(function () { return 0; }), e: otaLabels.map(function () { return 0; }) };
+      }
       g.n++;
-      for (var i = 0; i < liveSets.length; i++) if (liveSets[i][id]) g.l[i]++;
+      for (var i = 0; i < liveSets.length; i++) {
+        if (liveSets[i][id]) g.l[i]++;
+        if (excSets[i][id]) g.e[i]++;
+      }
     });
     return { otas: otaLabels, groups: Object.keys(groupMap).map(function (k) { return groupMap[k]; }) };
   });

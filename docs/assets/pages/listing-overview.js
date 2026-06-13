@@ -79,7 +79,8 @@
       const total = fg.reduce((s, g) => s + g.n, 0);
       const rows = otas.map((label, i) => {
         const live = fg.reduce((s, g) => s + (g.l[i] || 0), 0);
-        return { ota: label, live, pct: total ? Math.round(live / total * 1000) / 10 : 0, pending: total - live };
+        const exc = fg.reduce((s, g) => s + ((g.e && g.e[i]) || 0), 0);
+        return { ota: label, live, exc, pct: total ? Math.round(live / total * 1000) / 10 : 0, pending: total - live };
       }).sort((a, b) => b.pct - a.pct);
 
       statHost.innerHTML = '';
@@ -87,8 +88,8 @@
 
       tableHost.innerHTML = '';
       const tbl = document.createElement('table');
-      tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;max-width:720px';
-      tbl.innerHTML = '<thead><tr>' + ['OTA', 'Live', 'Listing %', 'Pending'].map((h, i) =>
+      tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;max-width:780px';
+      tbl.innerHTML = '<thead><tr>' + ['OTA', 'Live', 'Listing %', 'Pending', 'Exception'].map((h, i) =>
         `<th style="text-align:${i === 0 ? 'left' : 'right'};padding:9px 12px;border-bottom:2px solid #e7e9ee;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.04em">${h}</th>`).join('') + '</tr></thead>';
       const tb = document.createElement('tbody');
       rows.forEach(r => {
@@ -101,14 +102,16 @@
             `<div style="width:90px;height:7px;background:#eef2f6;border-radius:4px;overflow:hidden">` +
             `<div style="height:100%;width:${r.pct}%;background:${barColor(r.pct)}"></div></div>` +
             `<span style="font-weight:700;min-width:46px;color:${barColor(r.pct)}">${r.pct}%</span></div></td>` +
-          `<td style="padding:10px 12px;text-align:right;color:#b91c1c;font-weight:600;font-variant-numeric:tabular-nums">${r.pending.toLocaleString()}</td>`;
+          `<td style="padding:10px 12px;text-align:right;color:#b91c1c;font-weight:600;font-variant-numeric:tabular-nums">${r.pending.toLocaleString()}</td>` +
+          `<td style="padding:10px 12px;text-align:right;color:#a16207;font-variant-numeric:tabular-nums">${r.exc.toLocaleString()}</td>`;
         tb.appendChild(tr);
       });
       tbl.appendChild(tb);
       tableHost.appendChild(tbl);
+      tableHost.appendChild(UI.el('div', { style: 'font-size:11px;color:#9aa1ad;margin-top:6px' }, 'Exception is a subset of Pending (not-live).'));
       tableHost.appendChild(UI.el('button', { class: 'btn btn-sm', style: 'margin-top:10px',
-        onClick: () => UI.downloadCsv('listing_overview.csv', ['OTA', 'Live', 'Listing %', 'Pending'],
-          rows.map(r => ({ OTA: r.ota, Live: r.live, 'Listing %': r.pct, Pending: r.pending }))) }, 'Download CSV'));
+        onClick: () => UI.downloadCsv('listing_overview.csv', ['OTA', 'Live', 'Listing %', 'Pending', 'Exception'],
+          rows.map(r => ({ OTA: r.ota, Live: r.live, 'Listing %': r.pct, Pending: r.pending, Exception: r.exc }))) }, 'Download CSV'));
     }
     recompute();
 
