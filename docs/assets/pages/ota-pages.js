@@ -149,6 +149,9 @@
     return { id: cfg.id, label: cfg.label, render: render };
   }
 
-  window.OTA_PAGES = OTAS.map(makeSingle).concat(MULTI.map(makeMulti));
+  // OTAs that have a full channel-style config render there instead of here.
+  const channelKeys = window.OTA_CHANNEL_KEYS || [];
+  const singles = OTAS.filter(o => channelKeys.indexOf(o.key) === -1);
+  window.OTA_PAGES = singles.map(makeSingle).concat(MULTI.map(makeMulti));
 
 })();

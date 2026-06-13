@@ -9,6 +9,7 @@
   Router.register(window.PAGE_BOOKING);
   Router.register(window.PAGE_GOMMT);
   Router.register(window.PAGE_GMB);
+  (window.OTA_CHANNEL_PAGES || []).forEach(p => Router.register(p));
   (window.OTA_PAGES || []).forEach(p => Router.register(p));
   // OTA Tools group (rendered under a section header in the sidebar)
   Router.register(window.PAGE_MAPPING);
