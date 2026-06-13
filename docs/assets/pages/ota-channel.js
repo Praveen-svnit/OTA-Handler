@@ -360,4 +360,10 @@
     return { id: cfg.id, label: cfg.label, render: (target) => renderChannel(target, cfg) };
   };
 
+  // Reusable matrix (used by the Listing Overview deep-dive too).
+  // opts = { id, label, matrixCols }; state holds { payload, mx }.
+  window.OTA_renderMatrix = function (body, opts, state, cols, records) {
+    renderMatrix(body, opts, state, cols, records);
+  };
+
 })();

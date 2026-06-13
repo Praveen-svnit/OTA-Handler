@@ -10,7 +10,50 @@
 (function () {
 
   let data = null;
+  const ddCache = {};
   function barColor(p) { return p >= 80 ? '#16a34a' : p >= 50 ? '#b45309' : '#dc2626'; }
+
+  // Channels for the deep-dive pivot. Each loads its live tab and seeds the
+  // matrix with sensible default Rows/Columns (changeable in the UI).
+  const CHANNELS = [
+    { label: 'Booking.com', fetch: () => API.bcomTab('Live'), matrix: ['FH Status', 'Sub Status'] },
+    { label: 'GoMMT', fetch: () => API.gommtTab('Live'), matrix: ['FH Live Prop', 'Sub Status'] },
+    { label: 'GMB', fetch: () => API.gmbTab('New Tracker'), matrix: ['STATUS', 'GMB Sub Status'] },
+    { label: 'Agoda', fetch: () => API.ota('agoda'), matrix: ['STATUS', 'Agoda Status'] },
+    { label: 'Expedia', fetch: () => API.ota('expedia'), matrix: ['FH Status', 'Expedia Status'] },
+    { label: 'Cleartrip', fetch: () => API.ota('cleartrip'), matrix: ['STATUS', 'CT Status'] },
+    { label: 'Yatra', fetch: () => API.ota('yatra'), matrix: ['STATUS', 'Yatra Status'] },
+    { label: 'EaseMyTrip', fetch: () => API.ota('easemytrip'), matrix: ['FH Status', 'EMT Status'] },
+    { label: 'Ixigo', fetch: () => API.ota('ixigo'), matrix: ['STATUS', 'Ixigo Status'] },
+    { label: 'Indigo', fetch: () => API.ota('indigo'), matrix: ['STATUS', 'Indigo Status'] },
+  ];
+
+  function renderDeepDive(target) {
+    target.appendChild(UI.sectionLabel('Deep dive — pick a channel, then pivot with Rows / Columns / Filters'));
+    const sel = UI.el('select', { style: 'max-width:260px;margin-bottom:8px' });
+    sel.appendChild(UI.el('option', { value: '' }, '— choose a channel —'));
+    CHANNELS.forEach((c, i) => sel.appendChild(UI.el('option', { value: String(i) }, c.label)));
+    target.appendChild(sel);
+    const host = UI.el('div', { style: 'margin-top:8px' });
+    target.appendChild(host);
+
+    sel.addEventListener('change', async () => {
+      const c = CHANNELS[sel.value];
+      if (!c) { host.innerHTML = ''; return; }
+      host.innerHTML = '';
+      host.appendChild(UI.el('div', { class: 'splash' }, 'Loading ' + c.label + '…'));
+      let payload;
+      try { payload = ddCache[c.label] || (ddCache[c.label] = await c.fetch()); }
+      catch (e) { host.innerHTML = ''; host.appendChild(UI.el('div', { class: 'splash' }, 'Could not load: ' + e.message)); return; }
+      host.innerHTML = '';
+      const cols = payload.cols;
+      const recs = UI.toRecords(payload).filter(r => String(r[cols[0]] == null ? '' : r[cols[0]]).trim());
+      const state = { payload: payload, mx: null };
+      window.OTA_renderMatrix(host,
+        { id: 'overview_dd_' + c.label.toLowerCase().replace(/\W/g, '_'), label: c.label, matrixCols: c.matrix },
+        state, cols, recs);
+    });
+  }
 
   async function render(target) {
     target.innerHTML = '';
@@ -71,6 +114,10 @@
 
     const host = UI.el('div', { style: 'margin-top:20px' });
     target.appendChild(host);
+
+    target.appendChild(UI.el('div', { style: 'height:1px;background:#e4e4e7;margin:28px 0 18px' }));
+    renderDeepDive(target);
+
     function showBreakdown(r) {
       host.innerHTML = '';
       host.appendChild(UI.el('div', { style: 'font-weight:700;font-size:15px;margin-bottom:10px' },
